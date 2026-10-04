@@ -1,9 +1,10 @@
 {
   "name": "voicing-practice",
-  "private": true,
   "version": "0.0.0",
+  "private": true,
   "type": "module",
   "scripts": {
+    "test": "node --experimental-strip-types --test tests/*.test.ts",
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "oxlint",
@@ -12,6 +13,7 @@
     "fmt:check": "oxfmt --check"
   },
   "dependencies": {
+    "lucide-react": "^1.51.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8"
   },

@@ -1,32 +1,32 @@
-# React + TypeScript + Vite
+# 和弦之间
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+练习「左手低音 + 右手和弦」连接的键盘工具。输入实际和弦，以分段自然大调为参照阅读级数；选择和弦时，五线谱与键盘同步高亮。
 
-Currently, two official plugins are available:
+## 使用
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+1. 每小节四拍。点击任意一拍，在编辑抽屉中选择根音、性质及左手低音；横杠表示延续前一个和弦。
+2. 在任意和弦处设置分段参照大调。后续和弦沿用这个参照，修改参照不会改变音高。
+3. 在「编辑 / 设置」抽屉中选择完整和弦或 Shell 骨架、音区、跨度、连接目标、速度与循环，并增删小节。
+4. 点击「收起并播放」进入练习。播放逐拍推进，延续拍不重新触发声音；也可以逐拍切换或试听当前和弦。
+5. 和弦轨道与五线谱各自支持左右拖动，播放自动跟随当前拍与音符。和弦轨道末尾始终有添加小节按钮。谱面压缩延续拍的空白，因此能同时显示更多内容。
+6. 顶栏只有设置图标，底栏居中播放/暂停、右侧显示 BPM。调性参照仅在起点和变更拍位标记一次。图标使用本地打包的 Lucide。
 
-## React Compiler
+进行自动保存在当前浏览器本地，无需账号、网络音源或 AI 服务。旧版本每个和弦迁移为一个小节，不删除旧版存储。
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+## 标记与规则
 
-## Expanding the Oxlint configuration
+- 大和弦 M，小和弦 m，属和弦直接加数字，增 aug，减 dim，减七 dim7，半减七 m7b5。支持挂留、加九、小大七及部分变化属和弦。
+- 升降号前置于级数；斜杠后是低音级数。保留等音拼写：C 参照下 F# 是 #4，Gb 是 b5。
+- 左手一个音，固定在 C2–B2；指定低音优先于根音。
+- 完整预设保留全部构成音。Shell 保留根音、三音（或挂留音）及七音；没有七音时取三音骨架。不会擅自添加扩展音。
+- 右手每个音级一次，在音区和跨度内枚举排列，以动态规划寻找整段最低代价路径，同分顺序固定。
+- 代价考虑声部移动、大跳、声部增减。最高声部上行/下行是偏好，不是每步硬性要求。
+- 循环播放重复同一路径，暂不优化末尾到开头的连接。
+- 谱面依据小节内延续拍数显示四分、二分、附点二分或全音符；跨小节延续用延续标记提示。逐音显示临时升降号，不自动分析调性。试听为合成音色。
+- 第一版不含 MIDI 输入评分、指法推荐或采样钢琴音色。
 
-If you are developing a production application, we recommend enabling type-aware lint rules by installing `oxlint-tsgolint` and editing `.oxlintrc.json`:
+## 开发
 
-```json
-{
-  "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": ["react", "typescript", "oxc"],
-  "options": {
-    "typeAware": true
-  },
-  "rules": {
-    "react/rules-of-hooks": "error",
-    "react/only-export-components": ["warn", { "allowConstantExport": true }]
-  }
-}
-```
+使用 Node.js 24，运行 npm install、npm run dev。验证命令：npm test、npm run build、npm run lint。
 
-See the [Oxlint rules documentation](https://oxc.rs/docs/guide/usage/linter/rules) for the full list of rules and categories.
+和声规则位于 src/music.ts，拍位与音符错位规则位于 src/practice.ts。谱面、自定义下拉框与键盘分别位于 src/Staff.tsx、src/Select.tsx 和 src/Keyboard.tsx。测试覆盖各根音及和弦性质、音区/跨度约束、拼写、参照独立性、无解处理、整段最优路径、二度音簇错位和拍位延续。
