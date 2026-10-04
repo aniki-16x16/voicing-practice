@@ -40,6 +40,78 @@
 .progression {
   flex-shrink: 0;
 }
+.progression,
+.notation,
+.keys-section {
+  border: 1px solid #dce3d4;
+  border-radius: 12px;
+  background: #fffef9;
+}
+.progression {
+  padding: 3px 12px;
+}
+.notation {
+  padding: 0 10px;
+}
+.keys-section {
+  padding: 8px 12px 12px;
+}
+.scroll-shell {
+  position: relative;
+  display: flex;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+}
+.score-rail-shell {
+  flex: 1;
+}
+.scroll-shell::before,
+.scroll-shell::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 42px;
+  z-index: 2;
+  pointer-events: none;
+  opacity: 0;
+}
+.scroll-shell::before {
+  left: 0;
+  background: linear-gradient(to right, #fffef9, #fffef900);
+}
+.scroll-shell::after {
+  right: 0;
+  background: linear-gradient(to left, #fffef9, #fffef900);
+}
+.scroll-shell[data-left="true"]::before,
+.scroll-shell[data-right="true"]::after {
+  opacity: 1;
+}
+.rail-browse {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 34px;
+  padding: 0;
+  border-color: #d4dfca;
+  border-radius: 8px;
+  color: #6c855c;
+  background: #fffef9ee;
+  box-shadow: 0 2px 6px #344a3910;
+}
+.rail-browse-left {
+  left: 2px;
+}
+.rail-browse-right {
+  right: 2px;
+}
 .drag-scroll {
   overflow-x: auto;
   overflow-y: hidden;
@@ -48,8 +120,13 @@
   touch-action: pan-y;
   cursor: grab;
   user-select: none;
-  scrollbar-width: thin;
-  scrollbar-color: #cdd6c1 transparent;
+  flex: 1;
+  min-width: 0;
+  scrollbar-width: none;
+  outline: none;
+}
+.drag-scroll::-webkit-scrollbar {
+  display: none;
 }
 .drag-scroll[data-dragging="true"],
 .drag-scroll[data-dragging="true"] * {
@@ -170,9 +247,14 @@
 }
 .score-beat {
   cursor: pointer;
+  outline: none;
 }
 .score-beat:focus-visible {
-  outline: 2px solid #9aad87;
+  outline: none;
+}
+.score-beat:focus-visible > rect {
+  stroke: #9aad87;
+  stroke-width: 2;
 }
 .keys-section {
   flex-shrink: 0;
@@ -273,6 +355,18 @@
   justify-content: center;
   height: 48px;
   flex-shrink: 0;
+  gap: 8px;
+  padding-left: 48px;
+}
+.loop-toggle {
+  color: #8b9780;
+}
+.loop-toggle.enabled {
+  color: #38684f;
+  background: #e3ecd9;
+}
+.loop-toggle.enabled:hover {
+  background: #d7e4cb;
 }
 .play {
   background: #3d644d;
@@ -635,6 +729,15 @@
   }
   .notation {
     --score-scale: 0.85;
+  }
+  .transport {
+    gap: 6px;
+    padding-left: 0;
+  }
+  .playback-info {
+    position: static;
+    margin-left: 10px;
+    font-size: 13px;
   }
 }
 .inversion-settings {

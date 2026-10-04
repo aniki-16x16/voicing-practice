@@ -10,6 +10,9 @@ import {
   ChevronRight,
   Volume2,
   Anchor,
+  SkipBack,
+  SkipForward,
+  Repeat,
 } from "lucide-react";
 import { DragScroll } from "./DragScroll";
 import {
@@ -182,6 +185,14 @@ function App() {
     silence();
     lastSound.current = "";
   };
+  const pause = () => {
+    stop();
+    setCurrent(Math.floor(current / 4) * 4);
+  };
+  const seek = (beat: number) => {
+    stop();
+    setCurrent(beat);
+  };
   const sound = async (v: Voicing, duration = 1.5) => {
     const request = ++soundId.current;
     try {
@@ -345,16 +356,20 @@ function App() {
       </header>
       <main className="practice">
         <section className="progression" aria-label="和弦进行">
-          <DragScroll label="和弦进行，左右拖动浏览" className="chord-rail" followKey={current}>
+          <DragScroll
+            label="和弦进行，左右拖动浏览"
+            className="chord-rail"
+            followKey={Math.floor(current / 4)}
+          >
             <div className="measures">
               {Array.from({ length: beats.length / 4 }, (_, bar) => (
-                <div className="measure" key={bar}>
+                <div className="measure" key={bar} data-follow={bar}>
                   {[0, 1, 2, 3].map((b) => {
                     const beat = bar * 4 + b,
                       c = beats[beat],
                       ref = referenceAt(events.chords, events.indices[beat]);
                     return (
-                      <div className="beat-slot" key={beat} data-follow={beat}>
+                      <div className="beat-slot" key={beat}>
                         {markers[beat] && (
                           <span className="reference-marker">{markers[beat]} 大调</span>
                         )}
@@ -444,13 +459,38 @@ function App() {
         </section>
         <div className="transport">
           <button
+            className="icon-button"
+            aria-label="回到开头"
+            title="回到开头"
+            onClick={() => seek(0)}
+          >
+            <SkipBack size={20} />
+          </button>
+          <button
             className="play icon-button"
             aria-label={playing ? "暂停" : "播放"}
             title={playing ? "暂停" : "播放"}
             disabled={!voice}
-            onClick={() => (playing ? stop() : start())}
+            onClick={() => (playing ? pause() : start())}
           >
             {playing ? <Pause size={22} /> : <Play size={22} />}
+          </button>
+          <button
+            className="icon-button"
+            aria-label="回到结尾"
+            title="回到结尾"
+            onClick={() => seek(beats.length - 1)}
+          >
+            <SkipForward size={20} />
+          </button>
+          <button
+            className={`loop-toggle icon-button ${loop ? "enabled" : ""}`}
+            aria-label="循环播放"
+            aria-pressed={loop}
+            title={loop ? "关闭循环播放" : "开启循环播放"}
+            onClick={() => setLoop((value) => !value)}
+          >
+            <Repeat size={19} />
           </button>
           <span className="playback-info">
             {tempo} <small>BPM</small>

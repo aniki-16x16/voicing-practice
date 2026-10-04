@@ -22,7 +22,11 @@ export function Staff({
     width = offset + segments.length * cell + 16;
   const active = segments.findLastIndex((s) => s.beat <= current);
   return (
-    <DragScroll label="五线谱，左右拖动浏览" className="score-rail" followKey={active}>
+    <DragScroll
+      label="五线谱，左右拖动浏览"
+      className="score-rail"
+      followKey={Math.floor(current / 4)}
+    >
       <svg
         className="score"
         role="img"
@@ -60,7 +64,7 @@ export function Staff({
           return (
             <g
               key={beat}
-              data-follow={i}
+              data-follow={Math.floor(beat / 4)}
               data-score-beat={beat}
               className="score-beat"
               role="button"
