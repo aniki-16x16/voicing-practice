@@ -2,6 +2,9 @@ import { strict as assert } from "node:assert";
 import { test } from "node:test";
 import {
   candidates,
+  chordIntervals,
+  chordName,
+  chordParts,
   degree,
   generate,
   nextInversion,
@@ -10,6 +13,8 @@ import {
   pc,
   qualities,
   roots,
+  rootAtDegree,
+  references,
   selectedIntervals,
   spelling,
   transition,
@@ -139,4 +144,57 @@ test("slash bass and diminished seventh are spelled correctly", () => {
   assert.equal(generate([c], settings).voices[0].bass, 40);
   assert.equal(spelling(69, { id: 2, root: "C", quality: "dim7" }).name, "Bbb");
   assert.equal(spelling(60, { id: 3, root: "C#", quality: "M7" }).name, "B#");
+});
+
+test("degree editing keeps the reference scale spelling, including altered degrees", () => {
+  assert.equal(rootAtDegree(3, "D"), "F#");
+  assert.equal(rootAtDegree(7, "F#"), "E#");
+  assert.equal(rootAtDegree(7, "F#", 1), "E##");
+  assert.equal(rootAtDegree(1, "Db", -1), "Dbb");
+  assert.equal(rootAtDegree(5, "C", -1), "Gb");
+  for (const reference of references)
+    for (let value = 1; value <= 7; value++)
+      for (const alteration of [-1, 0, 1])
+        assert.equal(
+          degree(rootAtDegree(value, reference, alteration), reference),
+          `${alteration === -1 ? "b" : alteration === 1 ? "#" : ""}${value}`,
+        );
+});
+
+test("legacy chord qualities split into the new editor without changing their tones or names", () => {
+  for (const quality of ["M9", "m9", "9", "sus2", "sus4", "7sus4", "Madd9", "7(b9)", "7(#5,b9)"]) {
+    const old = { id: 1, root: "C", quality, bass: "E" };
+    const { base, extras } = chordParts(old);
+    const edited = { ...old, quality: base, extras };
+    assert.deepEqual(chordIntervals(edited), qualities[quality]);
+    assert.equal(chordName(edited), "C" + quality + "/E");
+  }
+});
+
+test("multiple extensions affect voicing and staff spelling, while shell keeps the core", () => {
+  const chord = { id: 1, root: "C", quality: "7", extras: ["9", "#11", "13"] };
+  assert.deepEqual(selectedIntervals(chord, "full"), [0, 4, 7, 10, 14, 18, 21]);
+  assert.deepEqual(selectedIntervals(chord, "shell"), [0, 4, 10]);
+  assert.equal(spelling(62, chord).name, "D");
+  assert.equal(spelling(66, chord).name, "F#");
+  assert.equal(spelling(69, chord).name, "A");
+  const { voices, error } = generate([chord], settings);
+  assert.equal(error, undefined);
+  assert.deepEqual(
+    voices[0].right.map((pitch) => mod(pitch)).sort((a, b) => a - b),
+    [0, 2, 4, 6, 7, 9, 10],
+  );
+  assert.equal(spelling(63, { ...chord, extras: ["#9"] }).name, "D#");
+  assert.equal(spelling(68, { ...chord, extras: ["b13"] }).name, "Ab");
+});
+
+test("suspensions replace thirds and duplicate extra pitch classes do not create impossible voices", () => {
+  const suspended = { id: 1, root: "C", quality: "m7", extras: ["sus2", "sus4", "9"] };
+  assert.deepEqual(selectedIntervals(suspended, "full"), [0, 2, 5, 7, 10]);
+  assert.deepEqual(selectedIntervals(suspended, "shell"), [0, 2, 5, 10]);
+  const six = { id: 2, root: "C", quality: "M", extras: ["6", "13"] };
+  assert.deepEqual(chordIntervals(six), [0, 4, 7, 9]);
+  assert.equal(spelling(69, six).name, "A");
+  assert.equal(generate([suspended, six], settings).error, undefined);
+  assert.equal(spelling(69, { id: 3, root: "C", quality: "dim7" }).name, "Bbb");
 });

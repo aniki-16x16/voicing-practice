@@ -88,6 +88,21 @@ export function Staff({
                 fillOpacity=".75"
               />
               {beat % 4 === 0 && <line x1={x} x2={x} y1="58" y2="198" stroke="#aab7a0" />}
+              {!v &&
+                [85, 185].map((y) => (
+                  <text
+                    key={y}
+                    x={x + 55}
+                    y={y}
+                    textAnchor="middle"
+                    fontFamily="serif"
+                    fontSize="28"
+                    fill="#8b9780"
+                  >
+                    {duration === 4 ? "𝄻" : duration >= 2 ? "𝄼" : "𝄽"}
+                    {duration === 3 ? "·" : ""}
+                  </text>
+                ))}
               {v &&
                 [
                   { notes: v.right, bass: false },

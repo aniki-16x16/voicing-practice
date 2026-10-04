@@ -18,6 +18,10 @@ import { DragScroll } from "./DragScroll";
 import { ChordAudio } from "./audio";
 import {
   chordName,
+  chordParts,
+  chordQuality,
+  baseQualities,
+  extraOptions,
   degree,
   generate,
   inversionOptions,
@@ -27,13 +31,14 @@ import {
   qualities,
   referenceAt,
   references,
-  roots,
+  pc,
   spelling,
 } from "./music";
 import type { Chord, Settings, Voicing, InversionAnchor } from "./music";
-import { timeline, referenceMarkers } from "./practice";
+import { timeline, referenceMarkers, adjacentChordBeat, removeChordAt } from "./practice";
 import type { Beat } from "./practice";
 import { Select } from "./Select";
+import { DegreeSelect } from "./DegreeSelect";
 import { Staff } from "./Staff";
 import Keyboard from "./Keyboard";
 import "./App.css";
@@ -57,12 +62,17 @@ const initial: Beat[] = [
   null,
 ];
 const defaults: Settings = { preset: "full", movement: "smooth", low: 48, high: 77, span: 12 };
+const emptyChord: Chord = { id: 0, root: "C", quality: "M" };
+const validPitch = (note: string) => /^[A-G](?:#{1,2}|b{1,2})?$/.test(note);
 const validChord = (c: Chord) =>
   c &&
-  roots.includes(c.root) &&
+  validPitch(c.root) &&
   Object.hasOwn(qualities, c.quality) &&
+  (c.extras === undefined ||
+    (Array.isArray(c.extras) &&
+      c.extras.every((extra) => extraOptions.some((option) => option.value === extra)))) &&
   (!c.reference || references.includes(c.reference)) &&
-  (!c.bass || roots.includes(c.bass));
+  (!c.bass || validPitch(c.bass));
 function restore(): Beat[] {
   try {
     const saved = JSON.parse(localStorage.getItem("voicing-practice-v2") || "null");
@@ -71,7 +81,6 @@ function restore(): Beat[] {
       saved.length > 0 &&
       saved.length <= 128 &&
       saved.length % 4 === 0 &&
-      saved[0] &&
       saved.every((c) => c === null || validChord(c))
     )
       return saved;
@@ -83,10 +92,21 @@ function restore(): Beat[] {
   }
   return initial;
 }
-const opts = (values: string[]) => values.map((value) => ({ value, label: value }));
 const noteOptions = (notes: number[]) =>
   notes.map((n) => ({ value: String(n), label: noteName(n) }));
-function Drawer({ children, onClose }: { children: ReactNode; onClose: () => void }) {
+function Drawer({
+  children,
+  title,
+  navigation,
+  label,
+  onClose,
+}: {
+  children: ReactNode;
+  title: ReactNode;
+  navigation?: ReactNode;
+  label: string;
+  onClose: () => void;
+}) {
   const ref = useRef<HTMLDialogElement>(null);
   useEffect(() => {
     const dialog = ref.current!;
@@ -97,7 +117,7 @@ function Drawer({ children, onClose }: { children: ReactNode; onClose: () => voi
     <dialog
       ref={ref}
       className="drawer"
-      aria-label="编辑与设置"
+      aria-label={label}
       onCancel={onClose}
       onClick={(e) => {
         if (
@@ -108,7 +128,8 @@ function Drawer({ children, onClose }: { children: ReactNode; onClose: () => voi
       }}
     >
       <div className="drawer-head">
-        <h2>编辑与设置</h2>
+        <h2>{title}</h2>
+        {navigation}
         <button aria-label="关闭抽屉" onClick={onClose}>
           <X size={19} />
         </button>
@@ -150,8 +171,10 @@ function App() {
     result = useMemo(() => generate(events.chords, settings, anchor), [events, settings, anchor]);
   const index = events.indices[current],
     voice = result.voices[index],
-    chord = events.chords[index],
+    activeChord = events.chords[index],
+    chord = activeChord ?? emptyChord,
     reference = referenceAt(events.chords, index);
+  const chordSettings = chordParts(chord);
   useEffect(() => {
     try {
       localStorage.setItem("voicing-practice-v2", JSON.stringify(beats));
@@ -204,9 +227,9 @@ function App() {
     }
   };
   useEffect(() => {
-    if (!playing || !voice) return;
+    if (!playing) return;
     const key = `${cycle}-${index}`;
-    if (lastSound.current !== key) {
+    if (voice && lastSound.current !== key) {
       lastSound.current = key;
       // 延音持续到实际切换时刻，不因每拍计时器的小幅延迟提前进入尾音。
       void sound(voice, null);
@@ -249,7 +272,6 @@ function App() {
     setCurrent(beat);
 
     if (edit) setDrawer("chord");
-    else if (result.voices[events.indices[beat]]) void sound(result.voices[events.indices[beat]]);
   };
   const edit = (patch: Partial<Chord>) => {
     stop();
@@ -259,7 +281,7 @@ function App() {
           ? {
               ...(c || {
                 ...chord,
-                id: Math.max(...events.chords.map((x) => x.id)) + 1,
+                id: Math.max(0, ...events.chords.map((x) => x.id)) + 1,
                 reference: undefined,
               }),
               ...patch,
@@ -276,16 +298,26 @@ function App() {
     }
     let id = beats[current]?.id;
     if (id === undefined) {
-      id = Math.max(...events.chords.map((c) => c.id)) + 1;
+      id = Math.max(0, ...events.chords.map((c) => c.id)) + 1;
       commitBeats(
         beats.map((c, i) => (i === current ? { ...chord, id: id!, reference: undefined } : c)),
       );
     }
+    const tone =
+      value === "rotate"
+        ? anchor?.chordId === id &&
+          inversionOptions(chord, settings.preset).some((option) => option.tone === anchor.tone)
+          ? anchor.tone
+          : (inversionOptions(chord, settings.preset).find(
+              (option) => voice && mod(option.tone) === mod(voice.right[0] - pc(chord.root)),
+            )?.tone ?? 0)
+        : Number(value);
     setAnchor({
       chordId: id,
-      tone: Number(value),
-      rotate: anchor?.chordId === id ? anchor.rotate : false,
+      tone,
+      rotate: value === "rotate",
     });
+    if (value === "rotate") setLoop(true);
   };
   const configure = (patch: Partial<Settings>) => {
     stop();
@@ -311,10 +343,14 @@ function App() {
     commitBeats([...beats, null, null, null, null]);
     setCurrent(beats.length);
   };
+  const deleteChord = (beat: number) => {
+    stop();
+    commitBeats(removeChordAt(beats, beat));
+  };
   const symbol = (c: Chord, ref: string) => (
     <>
       {degree(c.root, ref)}
-      <sup>{c.quality}</sup>
+      <sup>{chordQuality(c)}</sup>
       {c.bass && <small>/{degree(c.bass, ref)}</small>}
     </>
   );
@@ -339,6 +375,7 @@ function App() {
             label="和弦进行，左右拖动浏览"
             className="chord-rail"
             followKey={Math.floor(current / 4)}
+            onDeleteChord={deleteChord}
           >
             <div className="measures">
               {Array.from({ length: beats.length / 4 }, (_, bar) => (
@@ -356,8 +393,9 @@ function App() {
                           className={`beat ${current === beat ? "active" : ""} ${c ? "has-chord" : ""}`}
                           aria-label={`第${bar + 1}小节第${b + 1}拍 ${c ? chordName(c) : "延续"}，点击编辑`}
                           aria-pressed={current === beat}
+                          data-delete-beat={c ? beat : undefined}
                           onClick={() => choose(beat, !playing)}
-                          title={c ? chordName(c) : "延续前一个和弦"}
+                          title={c ? `${chordName(c)} · 长按后拖动删除` : "延续前一个和弦"}
                         >
                           <strong>{c ? symbol(c, ref) : "—"}</strong>
                           {c && anchor?.chordId === c.id && (
@@ -406,8 +444,14 @@ function App() {
         <section className="keys-section">
           <div className="keyboard-heading">
             <h2>
-              {symbol(chord, reference)}
-              <small>{chordName(chord)}</small>
+              {activeChord ? (
+                <>
+                  {symbol(chord, reference)}
+                  <small>{chordName(chord)}</small>
+                </>
+              ) : (
+                "休止"
+              )}
             </h2>
             <div className="note-chips">
               {voice &&
@@ -449,7 +493,7 @@ function App() {
             className="play icon-button"
             aria-label={playing ? "暂停" : "播放"}
             title={playing ? "暂停" : "播放"}
-            disabled={!voice}
+            disabled={!result.voices.length || !!result.error}
             onClick={() => (playing ? pause() : start())}
           >
             {playing ? <Pause size={22} /> : <Play size={22} />}
@@ -482,67 +526,73 @@ function App() {
         )}
       </main>
       {drawer && (
-        <Drawer onClose={() => setDrawer(null)}>
-          <div className="drawer-tabs">
-            <button
-              className={drawer === "chord" ? "selected" : ""}
-              onClick={() => setDrawer("chord")}
-            >
-              当前拍
-            </button>
-            <button
-              className={drawer === "practice" ? "selected" : ""}
-              onClick={() => setDrawer("practice")}
-            >
-              练习设置
-            </button>
-          </div>
+        <Drawer
+          onClose={() => setDrawer(null)}
+          label={drawer === "chord" ? "和弦编辑" : "练习设置"}
+          title={
+            drawer === "chord"
+              ? `第 ${Math.floor(current / 4) + 1} 小节 · 第 ${(current % 4) + 1} 拍`
+              : "练习设置"
+          }
+          navigation={
+            drawer === "chord" ? (
+              <div className="drawer-navigation">
+                <button
+                  className="icon-button"
+                  aria-label="编辑上一个和弦"
+                  disabled={!events.chords.length}
+                  onClick={() => choose(adjacentChordBeat(beats, current, -1), true)}
+                >
+                  <ChevronLeft size={18} />
+                </button>
+                <button
+                  className="icon-button"
+                  aria-label="编辑下一个和弦"
+                  disabled={!events.chords.length}
+                  onClick={() => choose(adjacentChordBeat(beats, current, 1), true)}
+                >
+                  <ChevronRight size={18} />
+                </button>
+              </div>
+            ) : undefined
+          }
+        >
           <div className="drawer-content">
             {drawer === "chord" ? (
               <>
-                <div className="edit-title">
-                  <h3>
-                    第 {Math.floor(current / 4) + 1} 小节 · 第 {(current % 4) + 1} 拍
-                  </h3>
-                  <div>
-                    <button
-                      aria-label="编辑上一拍"
-                      onClick={() => choose(mod(current - 1, beats.length), true)}
-                    >
-                      <ChevronLeft size={18} />
-                    </button>
-                    <button
-                      aria-label="编辑下一拍"
-                      onClick={() => choose((current + 1) % beats.length, true)}
-                    >
-                      <ChevronRight size={18} />
-                    </button>
-                  </div>
-                </div>
                 <p className="hint">
                   {beats[current]
                     ? "此拍开始新的和弦。"
-                    : "此拍延续前一个和弦；选择后会在此拍加入和弦。"}
+                    : activeChord
+                      ? "此拍延续前一个和弦；选择后会在此拍加入和弦。"
+                      : "此拍休止；选择后会在此拍加入和弦。"}
                 </p>
-                <div className="field-row">
+                <DegreeSelect
+                  label="根音级数"
+                  note={chord.root}
+                  reference={reference}
+                  onChange={(root) => edit({ root })}
+                />
+                <div className="field-row chord-quality-row">
                   <Select
-                    label="根音"
-                    value={chord.root}
-                    options={opts(roots)}
-                    onChange={(root) => edit({ root })}
+                    label="基础和弦"
+                    value={chordSettings.base}
+                    options={baseQualities}
+                    onChange={(quality) => edit({ quality, extras: chordSettings.extras })}
                   />
                   <Select
-                    label="性质"
-                    value={chord.quality}
-                    options={opts(Object.keys(qualities))}
-                    onChange={(quality) => edit({ quality })}
+                    label="附加音"
+                    value={chordSettings.extras}
+                    options={extraOptions}
+                    multiple
+                    onChange={(extras) => edit({ quality: chordSettings.base, extras })}
                   />
                 </div>
-                <Select
-                  label="左手低音"
-                  value={chord.bass || ""}
-                  options={[{ value: "", label: "根音" }, ...opts(roots)]}
-                  onChange={(bass) => edit({ bass: bass || undefined })}
+                <DegreeSelect
+                  label="低音级数"
+                  note={chord.bass || chord.root}
+                  reference={reference}
+                  onChange={(bass) => edit({ bass: bass === chord.root ? undefined : bass })}
                 />
                 <Select
                   label="分段参照大调"
@@ -556,9 +606,10 @@ function App() {
                 <section className="inversion-settings" aria-label="右手转位设置">
                   <Select
                     label="右手转位"
-                    value={isAnchor ? String(anchor!.tone) : "auto"}
+                    value={isAnchor ? (anchor!.rotate ? "rotate" : String(anchor!.tone)) : "auto"}
                     options={[
-                      { value: "auto", label: "自动" },
+                      { value: "auto", label: "自动优化" },
+                      { value: "rotate", label: "每轮自动换转位" },
                       ...inversionOptions(chord, settings.preset).map((o) => ({
                         value: String(o.tone),
                         label: o.label,
@@ -570,22 +621,6 @@ function App() {
                     ]}
                     onChange={setInversion}
                   />
-                  <p className="hint">
-                    右手最低音决定转位，左手低音不变。指定后会替换其他和弦的转位锚点。
-                  </p>
-                  <label className="loop-control">
-                    <input
-                      type="checkbox"
-                      disabled={!isAnchor}
-                      checked={isAnchor && !!anchor?.rotate}
-                      onChange={(e) => {
-                        stop();
-                        if (anchor) setAnchor({ ...anchor, rotate: e.target.checked });
-                        if (e.target.checked) setLoop(true);
-                      }}
-                    />
-                    每轮自动切换转位
-                  </label>
                   {isAnchor && anchor?.rotate && (
                     <p className="hint">
                       整段循环结束后切换；无解时暂停，不跳过。
@@ -595,13 +630,7 @@ function App() {
                   {!isAnchor && anchorChord && (
                     <p className="hint">
                       当前锚点：{chordName(anchorChord)} · {anchorName}
-                      <button
-                        className="clear-anchor"
-                        onClick={() => {
-                          stop();
-                          setAnchor(null);
-                        }}
-                      >
+                      <button className="clear-anchor" onClick={() => setInversion("auto")}>
                         解除
                       </button>
                     </p>
@@ -611,19 +640,6 @@ function App() {
                   <strong>{symbol(chord, reference)}</strong>
                   <span>{chordName(chord)}</span>
                 </div>
-                <button className="wide" onClick={() => edit({})}>
-                  在此拍{beats[current] ? "保留" : "加入"} {chordName(chord)}
-                </button>
-                <button
-                  className="wide subtle"
-                  disabled={current === 0 || !beats[current]}
-                  onClick={() => {
-                    stop();
-                    commitBeats(beats.map((c, i) => (i === current ? null : c)));
-                  }}
-                >
-                  清除此拍，延续前一个和弦
-                </button>
               </>
             ) : (
               <>
@@ -693,59 +709,12 @@ function App() {
                   />
                   循环播放
                 </label>
-                <div className="bar-actions">
-                  <button
-                    disabled={beats.length >= 128}
-                    onClick={() => {
-                      stop();
-                      commitBeats([...beats, null, null, null, null]);
-
-                      setCurrent(beats.length);
-                    }}
-                  >
-                    <Plus size={16} /> 添加小节
-                  </button>
-                  <button
-                    disabled={beats.length <= 4}
-                    onClick={() => {
-                      stop();
-                      const start = Math.floor(current / 4) * 4;
-                      if (
-                        anchor &&
-                        beats.slice(start, start + 4).some((c) => c?.id === anchor.chordId)
-                      )
-                        setAnchor(null);
-                      const next = beats.filter((_, i) => i < start || i >= start + 4);
-                      if (start === 0)
-                        next[0] = {
-                          ...(next[0] || events.chords[events.indices[4]]),
-                          reference: referenceAt(events.chords, events.indices[start + 4] ?? 0),
-                        };
-                      commitBeats(next);
-                      setCurrent(Math.min(start, next.length - 1));
-                    }}
-                  >
-                    删除当前小节
-                  </button>
-                </div>
-                <button
-                  className="wide subtle"
-                  onClick={() => {
-                    stop();
-                    setAnchor(null);
-                    commitBeats(initial);
-                    setCurrent(0);
-                  }}
-                >
-                  重置示例
-                </button>
               </>
             )}
           </div>
           <div className="drawer-bottom">
-            <button onClick={() => setDrawer(null)}>完成编辑</button>
-            <button className="play" disabled={!voice} onClick={start}>
-              <Play size={16} /> 收起并播放
+            <button className="primary" onClick={() => setDrawer(null)}>
+              完成编辑
             </button>
           </div>
         </Drawer>

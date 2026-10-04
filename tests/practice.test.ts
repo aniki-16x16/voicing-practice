@@ -6,6 +6,8 @@ import {
   timeline,
   scoreSegments,
   referenceMarkers,
+  adjacentChordBeat,
+  removeChordAt,
 } from "../src/practice.ts";
 import type { Beat } from "../src/practice.ts";
 
@@ -18,6 +20,36 @@ test("score packs sustained beats without losing durations or bar boundaries", (
     { beat: 6, duration: 2 },
   ]);
   assert.equal(scoreSegments([chord, chord, chord, chord]).length, 4);
+});
+
+test("chord navigation skips sustained beats and wraps between configured events", () => {
+  const c = { id: 1, root: "C", quality: "M" };
+  const beats: Beat[] = [c, null, null, { ...c, id: 2 }, null, { ...c, id: 3 }, null, null];
+  assert.equal(adjacentChordBeat(beats, 0, 1), 3);
+  assert.equal(adjacentChordBeat(beats, 3, 1), 5);
+  assert.equal(adjacentChordBeat(beats, 5, 1), 0);
+  assert.equal(adjacentChordBeat(beats, 0, -1), 5);
+  assert.equal(adjacentChordBeat(beats, 4, -1), 3);
+  assert.equal(adjacentChordBeat([null, null, c, null], 0, 1), 2);
+  assert.equal(adjacentChordBeat([null, null, null, null], 2, 1), 2);
+});
+
+test("deleting a chord keeps beat positions and the reference for its surviving segment", () => {
+  const c = { id: 1, root: "D", quality: "M", reference: "D" };
+  const beats: Beat[] = [c, null, { id: 2, root: "A", quality: "7" }, null];
+  const removed = removeChordAt(beats, 0);
+  assert.equal(removed.length, 4);
+  assert.equal(removed[0], null);
+  assert.equal(removed[2]!.reference, "D");
+  assert.equal(beats[0], c);
+  assert.equal(beats[2]!.reference, undefined);
+  assert.deepEqual(timeline(removed).indices, [-1, -1, 0, 0]);
+  assert.equal(
+    removeChordAt([c, null, { ...c, id: 2, reference: "E" }, null], 0)[2]!.reference,
+    "E",
+  );
+  assert.deepEqual(removeChordAt([c, null, null, null], 0), [null, null, null, null]);
+  assert.equal(removeChordAt(beats, 1), beats);
 });
 
 test("reference labels appear exactly at changes, including mid-bar", () => {

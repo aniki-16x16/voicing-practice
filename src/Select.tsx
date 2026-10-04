@@ -5,17 +5,17 @@ export interface Option {
   value: string;
   label: string;
 }
-export function Select({
-  label,
-  value,
-  options,
-  onChange,
-}: {
+type SelectProps = {
   label: string;
-  value: string;
   options: Option[];
-  onChange: (value: string) => void;
-}) {
+  showAll?: boolean;
+} & (
+  | { multiple?: false; value: string; onChange: (value: string) => void }
+  | { multiple: true; value: string[]; onChange: (value: string[]) => void }
+);
+export function Select(props: SelectProps) {
+  const { label, value, options, showAll = false, multiple = false } = props;
+  const selected = Array.isArray(value) ? value : [value];
   const [open, setOpen] = useState(false),
     [active, setActive] = useState(0);
   const [position, setPosition] = useState({ left: 0, top: 0, width: 0, height: 220 });
@@ -25,21 +25,29 @@ export function Select({
   const id = useId();
   const show = () => {
     const r = trigger.current!.getBoundingClientRect(),
-      height = Math.min(240, options.length * 40 + 10);
+      height = showAll ? options.length * 32 + 10 : Math.min(240, options.length * 40 + 10);
     const below = window.innerHeight - r.bottom - 12,
       above = r.top - 12;
-    const useAbove = below < Math.min(height, 160) && above > below;
-    const available = Math.min(height, useAbove ? above : below);
+    const useAbove = below < (showAll ? height : Math.min(height, 160)) && above > below;
+    const available = showAll
+      ? Math.min(height, window.innerHeight - 16)
+      : Math.min(height, useAbove ? above : below);
     setPosition({
       left: r.left,
-      top: useAbove ? r.top - available - 5 : r.bottom + 5,
+      top: Math.max(
+        8,
+        Math.min(
+          window.innerHeight - available - 8,
+          useAbove ? r.top - available - 5 : r.bottom + 5,
+        ),
+      ),
       width: r.width,
       height: available,
     });
     setActive(
       Math.max(
         0,
-        options.findIndex((o) => o.value === value),
+        options.findIndex((o) => selected.includes(o.value)),
       ),
     );
     setOpen(true);
@@ -51,7 +59,9 @@ export function Select({
     };
     const close = () => setOpen(false);
     const scroll = (e: Event) => {
-      if (!menu.current?.contains(e.target as Node)) close();
+      // 只在触发按钮所在容器滚动时关闭；背景谱表的平滑跟随不影响菜单位置。
+      if (e.target instanceof Node && trigger.current && e.target.contains(trigger.current))
+        close();
     };
     document.addEventListener("pointerdown", outside);
     window.addEventListener("resize", close);
@@ -63,11 +73,28 @@ export function Select({
     };
   }, [open]);
   useEffect(() => {
-    if (open) menu.current?.children[active]?.scrollIntoView({ block: "nearest" });
-  }, [active, open]);
+    const list = menu.current;
+    const option = list?.children[active] as HTMLElement | undefined;
+    if (!open || showAll || !list || !option) return;
+    const top = option.offsetTop;
+    const bottom = top + option.offsetHeight;
+    if (top < list.scrollTop) list.scrollTop = top;
+    else if (bottom > list.scrollTop + list.clientHeight)
+      list.scrollTop = bottom - list.clientHeight;
+  }, [active, open, showAll]);
   const choose = (index: number) => {
-    onChange(options[index].value);
-    setOpen(false);
+    const next = options[index].value;
+    if (props.multiple) {
+      props.onChange(
+        props.value.includes(next)
+          ? props.value.filter((value) => value !== next)
+          : [...props.value, next],
+      );
+      setActive(index);
+    } else {
+      props.onChange(next);
+      setOpen(false);
+    }
     trigger.current?.focus();
   };
   return (
@@ -125,15 +152,25 @@ export function Select({
           }
         }}
       >
-        <span>{options.find((o) => o.value === value)?.label || "—"}</span>
+        <span>
+          {multiple
+            ? selected.length
+              ? options
+                  .filter((o) => selected.includes(o.value))
+                  .map((o) => o.value.replaceAll("b", "♭").replaceAll("#", "♯"))
+                  .join("、")
+              : "无"
+            : options.find((o) => o.value === value)?.label || "—"}
+        </span>
         <ChevronDown className="chevron" size={16} />
       </button>
       {open && (
         <div
           ref={menu}
           id={`${id}-list`}
-          className="select-menu"
+          className={`select-menu ${showAll ? "show-all" : ""}`}
           role="listbox"
+          aria-multiselectable={multiple || undefined}
           aria-labelledby={`${id}-label`}
           style={{
             left: position.left,
@@ -147,14 +184,14 @@ export function Select({
               id={`${id}-${i}`}
               key={o.value}
               role="option"
-              aria-selected={value === o.value}
+              aria-selected={selected.includes(o.value)}
               className={`select-option ${active === i ? "focused" : ""}`}
               onPointerDown={(e) => e.preventDefault()}
               onPointerMove={() => setActive(i)}
               onClick={() => choose(i)}
             >
               <span>{o.label}</span>
-              {value === o.value && <Check size={15} />}
+              {selected.includes(o.value) && <Check size={15} />}
             </div>
           ))}
         </div>

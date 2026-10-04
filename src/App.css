@@ -216,6 +216,30 @@
 .beat.has-chord strong {
   color: #34533c;
 }
+.beat.has-chord {
+  touch-action: none;
+}
+.beat[data-delete-ready="true"] {
+  background: #fae8dd;
+  box-shadow: inset 0 0 0 1px #c38c6c;
+  border-radius: 6px;
+  transform: scale(1.04);
+}
+.beat[data-delete-ready="true"] strong {
+  color: #9a5c3d;
+}
+.beat[data-delete-ready="true"]::before {
+  content: "×";
+  position: absolute;
+  top: -4px;
+  right: 3px;
+  font-size: 14px;
+  color: #9a5c3d;
+}
+.drag-scroll[data-deleting="true"],
+.drag-scroll[data-deleting="true"] * {
+  cursor: grabbing !important;
+}
 .beat sup {
   font-size: 12px;
   margin-left: 1px;
@@ -448,9 +472,14 @@
   justify-content: space-between;
   padding: 18px 22px 12px;
   flex-shrink: 0;
+  gap: 8px;
+  border-bottom: 1px solid #dfe5d5;
+  margin-bottom: 16px;
 }
 .drawer-head h2 {
-  font-size: 17px;
+  flex: 1;
+  min-width: 0;
+  font-size: 15px;
   font-weight: 550;
 }
 .drawer-head > button {
@@ -458,23 +487,13 @@
   background: transparent;
   padding: 7px;
 }
-.drawer-tabs {
+.drawer-navigation {
   display: flex;
-  margin: 0 22px 14px;
-  padding: 4px;
-  background: #eaf0e2;
-  border-radius: 8px;
-  flex-shrink: 0;
+  gap: 4px;
 }
-.drawer-tabs button {
-  flex: 1;
-  border: 0;
-  background: transparent;
-  font-size: 12px;
-}
-.drawer-tabs button.selected {
-  background: #fffef9;
-  box-shadow: 0 1px 4px #27351c14;
+.drawer-navigation .icon-button {
+  width: 32px;
+  height: 32px;
 }
 .drawer-content {
   padding: 0 22px 16px;
@@ -547,22 +566,48 @@
   display: flex;
   gap: 12px;
 }
-.edit-title {
+.degree-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+}
+.accidental-field > span {
+  display: block;
+  color: #819071;
+  font-size: 11px;
+  margin-bottom: 7px;
+}
+.accidental-buttons {
+  display: flex;
+  gap: 4px;
+}
+.accidental-buttons button {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: center;
+  width: 44px;
+  height: 43px;
+  padding: 0;
+  font-size: 23px;
 }
-.edit-title h3 {
-  font-size: 14px;
-  font-weight: 550;
+.accidental-buttons button[aria-pressed="true"] {
+  background: #e3ecd9;
+  border-color: #8da878;
+  color: #38684f;
 }
-.edit-title > div {
-  display: flex;
-  gap: 6px;
+.select-menu.show-all {
+  overflow-y: hidden;
 }
-.edit-title button {
-  padding: 4px 12px;
-  font-size: 20px;
+.select-menu.show-all .select-option {
+  min-height: 32px;
+  padding: 6px 10px;
+}
+.select-trigger > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.select-option > svg {
+  flex-shrink: 0;
 }
 .hint {
   color: #8b997e;
@@ -589,15 +634,13 @@
   font-size: 13px;
   color: #849276;
 }
-.wide {
-  width: 100%;
-  font-size: 12px;
-  min-height: 40px;
+.primary {
+  background: #3d644d;
+  border-color: #3d644d;
+  color: #fff;
 }
-.subtle {
-  background: transparent;
-  color: #899579;
-  font-size: 11px;
+.primary:hover {
+  background: #30533e;
 }
 .tempo-control {
   font-size: 12px;
@@ -623,14 +666,6 @@
   width: 16px;
   height: 16px;
 }
-.bar-actions {
-  display: flex;
-  gap: 8px;
-}
-.bar-actions > button {
-  font-size: 11px;
-  flex: 1;
-}
 .drawer-bottom {
   display: flex;
   gap: 10px;
@@ -644,18 +679,11 @@
   font-size: 12px;
   min-height: 42px;
 }
-.bar-actions button,
 .drawer-bottom button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 6px;
-}
-.edit-title button {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 36px;
 }
 .drawer-head button {
   display: flex;

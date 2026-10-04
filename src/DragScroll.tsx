@@ -2,20 +2,54 @@ import { useLayoutEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 
+// 删除必须先停留再拖动；普通拖动仍用于浏览，斜向距离也计入阈值。
+const deleteHold = 450;
+const deleteDistance = 48;
+const dragSlop = 6;
+type Gesture = {
+  id: number;
+  x: number;
+  y: number;
+  left: number;
+  moved: boolean;
+  scrolling?: boolean;
+  armed?: boolean;
+  removed?: boolean;
+  timer?: number;
+  target?: HTMLElement;
+  beat?: number;
+};
+
 /** Independent horizontal rail: drag never activates the item underneath it. */
 export function DragScroll({
   children,
   label,
   className = "",
   followKey,
+  onDeleteChord,
 }: {
   children: ReactNode;
   label: string;
   className?: string;
   followKey: number | string;
+  onDeleteChord?: (beat: number) => void;
 }) {
   const ref = useRef<HTMLDivElement>(null);
-  const gesture = useRef({ id: -1, x: 0, y: 0, left: 0, moved: false });
+  const gesture = useRef<Gesture>({ id: -1, x: 0, y: 0, left: 0, moved: false });
+  const cancelHold = () => {
+    window.clearTimeout(gesture.current.timer);
+    gesture.current.timer = undefined;
+    if (gesture.current.target) delete gesture.current.target.dataset.deleteReady;
+  };
+  const endGesture = (rail: HTMLDivElement) => {
+    const id = gesture.current.id;
+    gesture.current.id = -1;
+    gesture.current.armed = false;
+    cancelHold();
+    delete rail.dataset.dragging;
+    delete rail.dataset.deleting;
+    if (rail.hasPointerCapture(id)) rail.releasePointerCapture(id);
+  };
   const [edges, setEdges] = useState({ left: false, right: false });
   useLayoutEffect(() => {
     const rail = ref.current!;
@@ -32,6 +66,7 @@ export function DragScroll({
     rail.addEventListener("scroll", update, { passive: true });
     update();
     return () => {
+      window.clearTimeout(gesture.current.timer);
       observer.disconnect();
       rail.removeEventListener("scroll", update);
     };
@@ -75,7 +110,8 @@ export function DragScroll({
         aria-label={label}
         tabIndex={0}
         onPointerDown={(e) => {
-          if (e.button !== 0) return;
+          if (e.button !== 0 || gesture.current.id !== -1) return;
+          cancelHold();
           gesture.current = {
             id: e.pointerId,
             x: e.clientX,
@@ -83,33 +119,75 @@ export function DragScroll({
             left: e.currentTarget.scrollLeft,
             moved: false,
           };
+          // 先由按下的元素捕获，保留普通点击；拖出边缘后仍能收到移动与抬手事件。
+          (e.target as Element).setPointerCapture(e.pointerId);
+          const target = (e.target as Element).closest<HTMLElement>("[data-delete-beat]");
+          if (onDeleteChord && target) {
+            const rail = e.currentTarget;
+            const g = gesture.current;
+            g.target = target;
+            g.beat = Number(target.dataset.deleteBeat);
+            g.timer = window.setTimeout(() => {
+              if (gesture.current !== g || g.id === -1 || g.moved) return;
+              g.armed = true;
+              g.moved = true;
+              target.dataset.deleteReady = "true";
+              rail.dataset.deleting = "true";
+              rail.setPointerCapture(g.id);
+            }, deleteHold);
+          }
         }}
         onPointerMove={(e) => {
           const g = gesture.current;
           if (g.id !== e.pointerId) return;
           const dx = e.clientX - g.x;
-          if (!g.moved && Math.abs(dx) > 6 && Math.abs(dx) > Math.abs(e.clientY - g.y)) {
+          const dy = e.clientY - g.y;
+          if (g.armed) {
+            e.preventDefault();
+            if (!g.removed && Math.hypot(dx, dy) >= deleteDistance && g.beat !== undefined) {
+              g.removed = true;
+              if (g.target) delete g.target.dataset.deleteReady;
+              onDeleteChord?.(g.beat);
+            }
+            return;
+          }
+          if (Math.hypot(dx, dy) > dragSlop) {
+            cancelHold();
             g.moved = true;
+          }
+          if (!g.scrolling && Math.abs(dx) > dragSlop && Math.abs(dx) > Math.abs(dy)) {
+            g.scrolling = true;
             e.currentTarget.setPointerCapture(e.pointerId);
             e.currentTarget.dataset.dragging = "true";
           }
-          if (g.moved) {
+          if (g.scrolling) {
             e.preventDefault();
             e.currentTarget.scrollLeft = g.left - dx;
           }
         }}
         onPointerUp={(e) => {
           if (gesture.current.id === e.pointerId) {
-            gesture.current.id = -1;
-            delete e.currentTarget.dataset.dragging;
-            if (e.currentTarget.hasPointerCapture(e.pointerId))
-              e.currentTarget.releasePointerCapture(e.pointerId);
+            endGesture(e.currentTarget);
           }
         }}
         onPointerCancel={(e) => {
-          gesture.current.id = -1;
-          gesture.current.moved = true;
-          delete e.currentTarget.dataset.dragging;
+          if (gesture.current.id === e.pointerId) {
+            gesture.current.moved = true;
+            endGesture(e.currentTarget);
+          }
+        }}
+        onLostPointerCapture={(e) => {
+          if (e.target === e.currentTarget && gesture.current.id === e.pointerId) {
+            gesture.current.moved = true;
+            endGesture(e.currentTarget);
+          }
+        }}
+        onContextMenu={(e) => {
+          if (
+            gesture.current.armed ||
+            (onDeleteChord && (e.target as Element).closest("[data-delete-beat]"))
+          )
+            e.preventDefault();
         }}
         onClickCapture={(e) => {
           if (gesture.current.moved) {
@@ -119,6 +197,12 @@ export function DragScroll({
           }
         }}
         onKeyDown={(e) => {
+          const target = (e.target as Element).closest<HTMLElement>("[data-delete-beat]");
+          if (onDeleteChord && target && (e.key === "Delete" || e.key === "Backspace")) {
+            e.preventDefault();
+            onDeleteChord(Number(target.dataset.deleteBeat));
+            return;
+          }
           if (e.target !== e.currentTarget) return;
           if (e.key === "ArrowRight" || e.key === "ArrowLeft") {
             e.preventDefault();
