@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="zh-CN">
+  <meta charset="utf-8" />
+  <title>Audio rendering checks</title>
+  <pre id="result">Rendering…</pre>
+  <script type="module">
+    import { ChordAudio } from "../src/audio.ts";
+
+    const sampleRate = 48000;
+    const checks = [];
+    const assert = (condition, name, details) => {
+      checks.push({ name, passed: condition, ...details });
+      if (!condition) throw new Error(name);
+    };
+    const render = async (schedule, seconds = 3) => {
+      const context = new OfflineAudioContext(1, sampleRate * seconds, sampleRate);
+      const player = new ChordAudio(context);
+      schedule(player);
+      const buffer = await context.startRendering();
+      player.dispose();
+      return buffer.getChannelData(0);
+    };
+    const rms = (samples, start, end) => {
+      const window = samples.slice(Math.round(start * sampleRate), Math.round(end * sampleRate));
+      return Math.sqrt(window.reduce((sum, value) => sum + value * value, 0) / window.length);
+    };
+    try {
+      const held = await render((player) => {
+        player.play([45, 57, 60, 64, 67], undefined, 0);
+        player.release(2.7);
+      });
+      const early = rms(held, 0.4, 0.6);
+      const late = rms(held, 2.3, 2.5);
+      assert(late / early > 0.9 && late / early < 1.1, "held chords retain their volume", {
+        earlyRms: early,
+        lateRms: late,
+      });
+      assert(rms(held, 2.8, 3) < 0.000001, "stopping leaves no stuck notes");
+
+      const dense = await render((player) => {
+        const chords = [
+          [48, 60, 64, 67, 71],
+          [50, 60, 65, 69, 72],
+        ];
+        for (let i = 0; i < 10; i++) player.play(chords[i % 2], undefined, i * 0.18);
+        player.release(1.8);
+      });
+      const windows = Array.from({ length: 8 }, (_, i) => {
+        const boundary = (i + 1) * 0.18;
+        return {
+          before: rms(dense, boundary - 0.03, boundary),
+          after: rms(dense, boundary, boundary + 0.03),
+        };
+      });
+      assert(
+        windows.every(({ before, after }) => before > 0.02 && after > 0.02),
+        "dense changes have no fade-to-silence gap",
+        { windows },
+      );
+      const peak = dense.reduce((max, sample) => Math.max(max, Math.abs(sample)), 0);
+      assert(peak < 1, "dense chords do not clip", { peak });
+      assert(rms(dense, 1.9, 2.1) < 0.000001, "dense playback stops completely");
+
+      const audition = await render((player) => player.play([48, 60, 64, 67], 0.3, 0));
+      assert(rms(audition, 0.4, 0.6) < 0.000001, "auditions stop after their duration");
+      const interrupted = await render((player) => {
+        player.play([48, 60, 64, 67], 1.5, 0);
+        player.play([50, 62, 65, 69], undefined, 0.003);
+        player.release(0.006);
+      });
+      assert(
+        rms(interrupted, 0.15, 0.3) < 0.000001,
+        "interrupting an attack cancels old envelope events",
+      );
+      document.querySelector("#result").textContent = JSON.stringify(
+        { passed: true, checks },
+        null,
+        2,
+      );
+    } catch (error) {
+      document.querySelector("#result").textContent = JSON.stringify(
+        { passed: false, error: error.message, checks },
+        null,
+        2,
+      );
+    }
+  </script>
+</html>

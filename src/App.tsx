@@ -15,6 +15,7 @@ import {
   Repeat,
 } from "lucide-react";
 import { DragScroll } from "./DragScroll";
+import { ChordAudio } from "./audio";
 import {
   chordName,
   degree,
@@ -142,7 +143,7 @@ function App() {
     [error, setError] = useState(""),
     [cycle, setCycle] = useState(0);
   const audio = useRef<AudioContext | null>(null),
-    oscillators = useRef<OscillatorNode[]>([]),
+    instrument = useRef<ChordAudio | null>(null),
     soundId = useRef(0),
     lastSound = useRef("");
   const events = useMemo(() => timeline(beats), [beats]),
@@ -170,14 +171,7 @@ function App() {
     setBeats(next);
   };
   const silence = () => {
-    oscillators.current.forEach((o) => {
-      try {
-        o.stop();
-      } catch {
-        /* already ended */
-      }
-    });
-    oscillators.current = [];
+    instrument.current?.release();
   };
   const stop = () => {
     soundId.current++;
@@ -193,37 +187,20 @@ function App() {
     stop();
     setCurrent(beat);
   };
-  const sound = async (v: Voicing, duration = 1.5) => {
+  const sound = async (v: Voicing, duration: number | null = 1.5) => {
     const request = ++soundId.current;
     try {
       const ctx = audio.current ?? new AudioContext();
       audio.current = ctx;
       await ctx.resume();
       if (request !== soundId.current) return;
-      silence();
-      const time = ctx.currentTime;
-      [v.bass, ...v.right].forEach((n) => {
-        const gain = ctx.createGain();
-        gain.gain.setValueAtTime(0, time);
-        gain.gain.linearRampToValueAtTime(0.1 / (v.right.length + 1), time + 0.015);
-        gain.gain.exponentialRampToValueAtTime(0.0001, time + duration);
-        gain.connect(ctx.destination);
-        const oscillator = ctx.createOscillator();
-        oscillator.type = "triangle";
-        oscillator.frequency.value = 440 * 2 ** ((n - 69) / 12);
-        oscillator.connect(gain);
-        oscillator.start(time);
-        oscillator.stop(time + duration + 0.05);
-        oscillator.onended = () => {
-          oscillator.disconnect();
-          gain.disconnect();
-        };
-        oscillators.current.push(oscillator);
-      });
+      const player = instrument.current ?? new ChordAudio(ctx);
+      instrument.current = player;
+      player.play([v.bass, ...v.right], duration ?? undefined);
       setError("");
     } catch {
       setError("音频未能启动，请再次点击试听。");
-      setPlaying(false);
+      stop();
     }
   };
   useEffect(() => {
@@ -231,8 +208,8 @@ function App() {
     const key = `${cycle}-${index}`;
     if (lastSound.current !== key) {
       lastSound.current = key;
-      const end = events.starts[index + 1] ?? beats.length;
-      void sound(voice, Math.max(0.25, ((end - current) * 60) / tempo));
+      // 延音持续到实际切换时刻，不因每拍计时器的小幅延迟提前进入尾音。
+      void sound(voice, null);
     }
     const timer = window.setTimeout(() => {
       const next = current + 1;
@@ -247,8 +224,7 @@ function App() {
           setCurrent(0);
           setCycle((n) => n + 1);
         } else {
-          setPlaying(false);
-          lastSound.current = "";
+          stop();
         }
       } else {
         setCurrent(next);
@@ -261,7 +237,10 @@ function App() {
   useEffect(
     () => () => {
       soundId.current++;
+      instrument.current?.dispose();
+      instrument.current = null;
       void audio.current?.close();
+      audio.current = null;
     },
     [],
   );
