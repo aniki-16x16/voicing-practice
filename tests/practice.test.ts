@@ -8,6 +8,7 @@ import {
   referenceMarkers,
   adjacentChordBeat,
   removeChordAt,
+  removeBarAt,
 } from "../src/practice.ts";
 import type { Beat } from "../src/practice.ts";
 
@@ -50,6 +51,31 @@ test("deleting a chord keeps beat positions and the reference for its surviving 
   );
   assert.deepEqual(removeChordAt([c, null, null, null], 0), [null, null, null, null]);
   assert.equal(removeChordAt(beats, 1), beats);
+});
+
+test("deleting a bar removes exactly its slots and preserves the following reference", () => {
+  const c = { id: 1, root: "C", quality: "M", reference: "C" };
+  const d = { id: 2, root: "D", quality: "M", reference: "D" };
+  const e = { id: 3, root: "E", quality: "M", reference: "E" };
+  const g = { id: 4, root: "G", quality: "7" };
+  const beats: Beat[] = [c, null, null, null, d, null, e, null, null, g, null, null];
+  const next = removeBarAt(beats, 1);
+  assert.deepEqual(next, [c, null, null, null, null, { ...g, reference: "E" }, null, null]);
+  assert.equal(beats.length, 12);
+  assert.equal(g.reference, undefined);
+  assert.equal(
+    removeBarAt([...beats.slice(0, 9), { ...g, reference: "F" }, null, null], 1)[5]!.reference,
+    "F",
+  );
+  assert.deepEqual(removeBarAt([null, null, null, null, c, null, null, null], 0), [
+    c,
+    null,
+    null,
+    null,
+  ]);
+  assert.deepEqual(removeBarAt([c, null, null, null], 0), []);
+  assert.equal(removeBarAt(beats, 3), beats);
+  assert.equal(removeBarAt(beats, -1), beats);
 });
 
 test("reference labels appear exactly at changes, including mid-bar", () => {

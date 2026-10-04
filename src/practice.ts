@@ -20,6 +20,18 @@ export function removeChordAt(beats: Beat[], beat: number): Beat[] {
     next[following] = { ...next[following]!, reference: removed.reference };
   return next;
 }
+
+/** Delete four beat slots and preserve the following segment's reference. */
+export function removeBarAt(beats: Beat[], bar: number): Beat[] {
+  const start = bar * 4;
+  if (!Number.isInteger(bar) || start < 0 || start >= beats.length) return beats;
+  const reference = beats.slice(start, start + 4).findLast((chord) => chord?.reference)?.reference;
+  const next = [...beats.slice(0, start), ...beats.slice(start + 4)];
+  const following = next.findIndex((chord, beat) => beat >= start && chord !== null);
+  if (reference && following >= 0 && !next[following]!.reference)
+    next[following] = { ...next[following]!, reference };
+  return next;
+}
 export function timeline(beats: Beat[]) {
   const chords: Chord[] = [],
     starts: number[] = [],

@@ -72,7 +72,8 @@ export function Staff({
               aria-label={`第${Math.floor(beat / 4) + 1}小节第${(beat % 4) + 1}拍音符`}
               onClick={() => onSelect(beat)}
               onKeyDown={(e) => {
-                if (e.key === "Enter" || e.key === " ") {
+                // Enter 选择谱面位置；空格交给全局播放快捷键处理。
+                if (e.key === "Enter") {
                   e.preventDefault();
                   onSelect(beat);
                 }

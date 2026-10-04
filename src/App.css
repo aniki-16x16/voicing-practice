@@ -145,6 +145,7 @@
   align-items: flex-end;
   min-height: 76px;
   padding-right: 12px;
+  padding-bottom: 13px;
 }
 .measure {
   display: flex;
@@ -218,6 +219,31 @@
 }
 .beat.has-chord {
   touch-action: none;
+}
+.beat-slot > .chord-name {
+  position: absolute;
+  top: calc(100% + 2px);
+  left: 12px;
+  max-width: calc(100% - 24px);
+  font-size: 10px;
+  line-height: 14px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: #819071;
+}
+.beat.inversion-set {
+  background: #e8e3f2;
+  border-radius: 6px;
+}
+.beat.inversion-set:hover {
+  background: #dfd7ed;
+}
+.beat.inversion-set strong {
+  color: #66527e;
+}
+.beat.inversion-set + .chord-name {
+  color: #887399;
 }
 .beat[data-delete-ready="true"] {
   background: #fae8dd;
@@ -408,17 +434,9 @@
   width: 44px;
   height: 44px;
 }
-.playback-info {
+.playback-tempo {
   position: absolute;
   right: 0;
-  font-size: 15px;
-  font-variant-numeric: tabular-nums;
-  color: #758669;
-}
-.playback-info small {
-  font-size: 10px;
-  margin-left: 3px;
-  letter-spacing: 1px;
 }
 .error {
   margin: auto;
@@ -530,6 +548,31 @@
   border-color: #719060;
   box-shadow: 0 0 0 2px #71906018;
 }
+.select-control {
+  position: relative;
+}
+.select-trigger.clearable {
+  padding-right: 42px;
+}
+.select-clear {
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #869879;
+}
+.select-clear:hover {
+  background: #eef2e6;
+  color: #38684f;
+}
 .chevron {
   color: #869879;
 }
@@ -561,6 +604,41 @@
   color: #37613e;
   font-weight: 600;
   background: #e3ecd9;
+}
+.select-menu.tag-menu {
+  display: flex;
+  flex-wrap: wrap;
+  align-content: flex-start;
+  gap: 8px;
+  padding: 10px;
+}
+.tag-menu .tag-option {
+  position: relative;
+  flex: none;
+  max-width: 100%;
+  min-height: 32px;
+  padding: 6px 27px 6px 10px;
+  border: 1px solid #dce3d4;
+  border-radius: 6px;
+  background: #f5f7ef;
+  font-size: 12px;
+  line-height: 18px;
+  overflow-wrap: anywhere;
+}
+.tag-menu .tag-option.focused {
+  background: #eef2e6;
+  border-color: #9aad87;
+}
+.tag-menu .tag-option[aria-selected="true"] {
+  color: #37613e;
+  border-color: #8da878;
+  background: #e3ecd9;
+}
+.tag-option > svg {
+  position: absolute;
+  right: 7px;
+  top: 50%;
+  transform: translateY(-50%);
 }
 .field-row {
   display: flex;
@@ -646,15 +724,76 @@
   font-size: 12px;
   color: #7a8c6b;
   display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
+  flex-direction: column;
+  gap: 7px;
 }
-.tempo-control > span {
-  margin-left: auto;
+.tempo-stepper {
+  display: flex;
+  align-items: center;
+  border: 1px solid #d4dfca;
+  background: #fffef9;
+  border-radius: 8px;
+  height: 38px;
+  width: max-content;
+  flex-shrink: 0;
 }
-.tempo-control input {
-  width: 100%;
+.tempo-stepper button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  border-radius: 7px;
+  color: #658255;
+}
+.tempo-stepper button:hover {
+  background: #e8efdf;
+}
+.tempo-value {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding-right: 6px;
+}
+.tempo-value input {
+  width: 42px;
+  padding: 4px 0;
+  text-align: center;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: #3d644d;
+  font-size: 15px;
+  font-weight: 550;
+  font-variant-numeric: tabular-nums;
+  appearance: textfield;
+}
+.tempo-value input::-webkit-inner-spin-button,
+.tempo-value input::-webkit-outer-spin-button {
+  -webkit-appearance: none;
   margin: 0;
+}
+.tempo-value span {
+  font-size: 9px;
+  color: #819071;
+}
+.tempo-control .tempo-stepper {
+  width: 100%;
+  height: 44px;
+}
+.tempo-control .tempo-stepper button {
+  width: 44px;
+}
+.tempo-control .tempo-value {
+  flex: 1;
+  justify-content: center;
+}
+.tempo-control .tempo-value input {
+  font-size: 18px;
+  width: 54px;
 }
 .loop-control {
   font-size: 12px;
@@ -684,6 +823,47 @@
   align-items: center;
   justify-content: center;
   gap: 6px;
+}
+.drawer-bottom .delete-bar {
+  flex: none;
+  width: 108px;
+  position: relative;
+  overflow: hidden;
+  padding: 0 10px;
+  border-color: #c18a79;
+  background: transparent;
+  color: #a45c49;
+  user-select: none;
+  touch-action: none;
+}
+.drawer-bottom .delete-bar:hover {
+  background: #f7ede7;
+}
+.drawer-bottom .delete-bar.empty {
+  color: #fff;
+  background: #ac6753;
+  border-color: #ac6753;
+}
+.drawer-bottom .delete-bar.empty:hover {
+  background: #985642;
+}
+.delete-bar-fill {
+  position: absolute;
+  inset: 0;
+  background: #e9c6b6;
+  transform-origin: left;
+  transition: transform 180ms ease-out;
+  pointer-events: none;
+}
+.delete-bar[data-holding="true"] .delete-bar-fill {
+  transition: none;
+}
+.delete-bar-label {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  pointer-events: none;
 }
 .drawer-head button {
   display: flex;
@@ -720,7 +900,7 @@
     gap: 6px;
   }
   .chord-rail {
-    height: 78px;
+    height: 86px;
   }
   .notation {
     --score-scale: 0.8;
@@ -762,10 +942,25 @@
     gap: 6px;
     padding-left: 0;
   }
-  .playback-info {
+  .playback-tempo {
     position: static;
-    margin-left: 10px;
-    font-size: 13px;
+    margin-left: 4px;
+  }
+}
+@media (max-width: 360px) {
+  .transport {
+    gap: 4px;
+  }
+  .transport > .icon-button {
+    width: 34px;
+    height: 36px;
+  }
+  .transport .play {
+    width: 40px;
+    height: 40px;
+  }
+  .playback-tempo .tempo-stepper button {
+    width: 28px;
   }
 }
 .inversion-settings {
@@ -782,24 +977,6 @@
   padding: 2px 8px;
   margin-left: 8px;
   font-size: 10px;
-}
-.anchor-marker {
-  position: absolute;
-  bottom: -11px;
-  left: 8px;
-  display: flex;
-  align-items: center;
-  gap: 3px;
-  white-space: nowrap;
-  font-size: 9px;
-  line-height: 12px;
-  color: #6b8857;
-}
-.chord-rail {
-  height: 98px;
-}
-.measures {
-  padding-bottom: 13px;
 }
 .drawer-content > .select-field {
   flex: none;

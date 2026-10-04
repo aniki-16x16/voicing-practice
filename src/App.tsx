@@ -9,7 +9,6 @@ import {
   ChevronLeft,
   ChevronRight,
   Volume2,
-  Anchor,
   SkipBack,
   SkipForward,
   Repeat,
@@ -35,10 +34,18 @@ import {
   spelling,
 } from "./music";
 import type { Chord, Settings, Voicing, InversionAnchor } from "./music";
-import { timeline, referenceMarkers, adjacentChordBeat, removeChordAt } from "./practice";
+import {
+  timeline,
+  referenceMarkers,
+  adjacentChordBeat,
+  removeChordAt,
+  removeBarAt,
+} from "./practice";
 import type { Beat } from "./practice";
 import { Select } from "./Select";
 import { DegreeSelect } from "./DegreeSelect";
+import { TempoControl } from "./TempoControl";
+import { DeleteBarButton } from "./DeleteBarButton";
 import { Staff } from "./Staff";
 import Keyboard from "./Keyboard";
 import "./App.css";
@@ -78,7 +85,6 @@ function restore(): Beat[] {
     const saved = JSON.parse(localStorage.getItem("voicing-practice-v2") || "null");
     if (
       Array.isArray(saved) &&
-      saved.length > 0 &&
       saved.length <= 128 &&
       saved.length % 4 === 0 &&
       saved.every((c) => c === null || validChord(c))
@@ -329,6 +335,30 @@ function App() {
 
     setPlaying(true);
   };
+  useEffect(() => {
+    const shortcut = (event: KeyboardEvent) => {
+      if (
+        event.code !== "Space" ||
+        event.defaultPrevented ||
+        event.ctrlKey ||
+        event.altKey ||
+        event.metaKey ||
+        event.shiftKey ||
+        drawer ||
+        (event.target instanceof Element &&
+          event.target.closest(
+            'input, textarea, select, [contenteditable]:not([contenteditable="false"]), [role="combobox"]',
+          ))
+      )
+        return;
+      event.preventDefault();
+      if (event.repeat) return;
+      if (playing) pause();
+      else if (result.voices.length && !result.error) start();
+    };
+    window.addEventListener("keydown", shortcut);
+    return () => window.removeEventListener("keydown", shortcut);
+  });
   const anchorChord = anchor ? events.chords.find((c) => c.id === anchor.chordId) : undefined;
   const anchorName =
     anchor && anchorChord
@@ -346,6 +376,15 @@ function App() {
   const deleteChord = (beat: number) => {
     stop();
     commitBeats(removeChordAt(beats, beat));
+  };
+  const currentBar = Math.floor(current / 4);
+  const emptyBar = beats.slice(currentBar * 4, currentBar * 4 + 4).every((chord) => !chord);
+  const deleteBar = () => {
+    stop();
+    const next = removeBarAt(beats, currentBar);
+    commitBeats(next);
+    setCurrent(Math.min(currentBar * 4, Math.max(0, next.length - 4)));
+    if (!next.length) setDrawer(null);
   };
   const symbol = (c: Chord, ref: string) => (
     <>
@@ -390,7 +429,7 @@ function App() {
                           <span className="reference-marker">{markers[beat]} 大调</span>
                         )}
                         <button
-                          className={`beat ${current === beat ? "active" : ""} ${c ? "has-chord" : ""}`}
+                          className={`beat ${current === beat ? "active" : ""} ${c ? "has-chord" : ""} ${c && anchor?.chordId === c.id ? "inversion-set" : ""}`}
                           aria-label={`第${bar + 1}小节第${b + 1}拍 ${c ? chordName(c) : "延续"}，点击编辑`}
                           aria-pressed={current === beat}
                           data-delete-beat={c ? beat : undefined}
@@ -398,17 +437,12 @@ function App() {
                           title={c ? `${chordName(c)} · 长按后拖动删除` : "延续前一个和弦"}
                         >
                           <strong>{c ? symbol(c, ref) : "—"}</strong>
-                          {c && anchor?.chordId === c.id && (
-                            <span
-                              className="anchor-marker"
-                              title={anchorName}
-                              aria-label={`转位锚点：${anchorName}`}
-                            >
-                              <Anchor size={10} />
-                              {anchorName}
-                            </span>
-                          )}
                         </button>
+                        {c && (
+                          <span className="chord-name" title={chordName(c)}>
+                            {chordName(c)}
+                          </span>
+                        )}
                       </div>
                     );
                   })}
@@ -485,6 +519,7 @@ function App() {
             className="icon-button"
             aria-label="回到开头"
             title="回到开头"
+            disabled={!beats.length}
             onClick={() => seek(0)}
           >
             <SkipBack size={20} />
@@ -492,7 +527,8 @@ function App() {
           <button
             className="play icon-button"
             aria-label={playing ? "暂停" : "播放"}
-            title={playing ? "暂停" : "播放"}
+            title={playing ? "暂停（空格）" : "播放（空格）"}
+            aria-keyshortcuts="Space"
             disabled={!result.voices.length || !!result.error}
             onClick={() => (playing ? pause() : start())}
           >
@@ -502,6 +538,7 @@ function App() {
             className="icon-button"
             aria-label="回到结尾"
             title="回到结尾"
+            disabled={!beats.length}
             onClick={() => seek(beats.length - 1)}
           >
             <SkipForward size={20} />
@@ -515,9 +552,9 @@ function App() {
           >
             <Repeat size={19} />
           </button>
-          <span className="playback-info">
-            {tempo} <small>BPM</small>
-          </span>
+          <div className="playback-tempo">
+            <TempoControl value={tempo} onChange={setTempo} />
+          </div>
         </div>
         {error && (
           <p className="audio-error" role="alert">
@@ -557,7 +594,7 @@ function App() {
             ) : undefined
           }
         >
-          <div className="drawer-content">
+          <div className="drawer-content" data-select-container>
             {drawer === "chord" ? (
               <>
                 <p className="hint">
@@ -576,12 +613,14 @@ function App() {
                 <div className="field-row chord-quality-row">
                   <Select
                     label="基础和弦"
+                    layout="tags"
                     value={chordSettings.base}
                     options={baseQualities}
                     onChange={(quality) => edit({ quality, extras: chordSettings.extras })}
                   />
                   <Select
                     label="附加音"
+                    layout="tags"
                     value={chordSettings.extras}
                     options={extraOptions}
                     multiple
@@ -596,6 +635,7 @@ function App() {
                 />
                 <Select
                   label="分段参照大调"
+                  layout="tags"
                   value={beats[current]?.reference || (current === 0 ? "C" : "")}
                   options={[
                     ...(current > 0 ? [{ value: "", label: "沿用前段" }] : []),
@@ -687,20 +727,11 @@ function App() {
                   ]}
                   onChange={(span) => configure({ span: Number(span) })}
                 />
-                <label className="tempo-control">
-                  速度 <span>{tempo} BPM</span>
-                  <input
-                    aria-label="速度 BPM"
-                    type="range"
-                    min="40"
-                    max="140"
-                    value={tempo}
-                    onChange={(e) => {
-                      stop();
-                      setTempo(Number(e.target.value));
-                    }}
-                  />
-                </label>
+                <div className="tempo-control">
+                  <span>播放速度</span>
+                  <TempoControl value={tempo} onChange={setTempo} />
+                  <p className="hint">点击加减微调，或直接输入；按住 Shift 每次调整 5 BPM。</p>
+                </div>
                 <label className="loop-control">
                   <input
                     type="checkbox"
@@ -713,6 +744,9 @@ function App() {
             )}
           </div>
           <div className="drawer-bottom">
+            {drawer === "chord" && (
+              <DeleteBarButton key={currentBar} empty={emptyBar} onDelete={deleteBar} />
+            )}
             <button className="primary" onClick={() => setDrawer(null)}>
               完成编辑
             </button>
