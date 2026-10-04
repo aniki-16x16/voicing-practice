@@ -9,12 +9,15 @@ import {
   ChevronLeft,
   ChevronRight,
   Volume2,
+  Anchor,
 } from "lucide-react";
 import { DragScroll } from "./DragScroll";
 import {
   chordName,
   degree,
   generate,
+  inversionOptions,
+  nextInversion,
   mod,
   noteName,
   qualities,
@@ -23,7 +26,7 @@ import {
   roots,
   spelling,
 } from "./music";
-import type { Chord, Settings, Voicing } from "./music";
+import type { Chord, Settings, Voicing, InversionAnchor } from "./music";
 import { timeline, referenceMarkers } from "./practice";
 import type { Beat } from "./practice";
 import { Select } from "./Select";
@@ -114,6 +117,21 @@ function App() {
   const [beats, setBeats] = useState<Beat[]>(restore),
     [settings, setSettings] = useState(defaults),
     [current, setCurrent] = useState(0);
+  const [anchor, setAnchor] = useState<InversionAnchor | null>(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem("voicing-inversion-v1") || "null");
+      if (
+        saved &&
+        beats.some((c) => c?.id === saved.chordId) &&
+        Number.isInteger(saved.tone) &&
+        typeof saved.rotate === "boolean"
+      )
+        return saved;
+    } catch {
+      /* optional */
+    }
+    return null;
+  });
   const [drawer, setDrawer] = useState<"chord" | "practice" | null>(null),
     [tempo, setTempo] = useState(76),
     [playing, setPlaying] = useState(false),
@@ -125,7 +143,7 @@ function App() {
     soundId = useRef(0),
     lastSound = useRef("");
   const events = useMemo(() => timeline(beats), [beats]),
-    result = useMemo(() => generate(events.chords, settings), [events, settings]);
+    result = useMemo(() => generate(events.chords, settings, anchor), [events, settings, anchor]);
   const index = events.indices[current],
     voice = result.voices[index],
     chord = events.chords[index],
@@ -137,6 +155,17 @@ function App() {
       /* optional */
     }
   }, [beats]);
+  useEffect(() => {
+    try {
+      localStorage.setItem("voicing-inversion-v1", JSON.stringify(anchor));
+    } catch {
+      /* optional */
+    }
+  }, [anchor]);
+  const commitBeats = (next: Beat[]) => {
+    if (anchor && !next.some((c) => c?.id === anchor.chordId)) setAnchor(null);
+    setBeats(next);
+  };
   const silence = () => {
     oscillators.current.forEach((o) => {
       try {
@@ -198,8 +227,13 @@ function App() {
       const next = current + 1;
       if (next === beats.length) {
         if (loop) {
+          const nextAnchor = nextInversion(anchor, events.chords, settings);
+          const nextResult = generate(events.chords, settings, nextAnchor);
+          setAnchor(nextAnchor);
+          if (nextResult.error) {
+            stop();
+          }
           setCurrent(0);
-
           setCycle((n) => n + 1);
         } else {
           setPlaying(false);
@@ -212,7 +246,7 @@ function App() {
     return () => window.clearTimeout(timer);
     // The timer advances beats; sustained slots do not retrigger the chord.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [playing, current, tempo, loop, voice, beats.length, cycle, index, events]);
+  }, [playing, current, tempo, loop, voice, beats.length, cycle, index, events, anchor, settings]);
   useEffect(
     () => () => {
       soundId.current++;
@@ -229,7 +263,7 @@ function App() {
   };
   const edit = (patch: Partial<Chord>) => {
     stop();
-    setBeats(
+    commitBeats(
       beats.map((c, i) =>
         i === current
           ? {
@@ -244,6 +278,25 @@ function App() {
       ),
     );
   };
+  const setInversion = (value: string) => {
+    stop();
+    if (value === "auto") {
+      setAnchor(null);
+      return;
+    }
+    let id = beats[current]?.id;
+    if (id === undefined) {
+      id = Math.max(...events.chords.map((c) => c.id)) + 1;
+      commitBeats(
+        beats.map((c, i) => (i === current ? { ...chord, id: id!, reference: undefined } : c)),
+      );
+    }
+    setAnchor({
+      chordId: id,
+      tone: Number(value),
+      rotate: anchor?.chordId === id ? anchor.rotate : false,
+    });
+  };
   const configure = (patch: Partial<Settings>) => {
     stop();
     setSettings({ ...settings, ...patch });
@@ -254,11 +307,18 @@ function App() {
 
     setPlaying(true);
   };
+  const anchorChord = anchor ? events.chords.find((c) => c.id === anchor.chordId) : undefined;
+  const anchorName =
+    anchor && anchorChord
+      ? inversionOptions(anchorChord, settings.preset).find((o) => o.tone === anchor.tone)?.name ||
+        "需重选转位"
+      : "";
+  const isAnchor = !!beats[current] && anchor?.chordId === beats[current]?.id;
   const markers = useMemo(() => referenceMarkers(beats), [beats]);
   const addBar = () => {
     if (beats.length >= 128) return;
     stop();
-    setBeats([...beats, null, null, null, null]);
+    commitBeats([...beats, null, null, null, null]);
     setCurrent(beats.length);
   };
   const symbol = (c: Chord, ref: string) => (
@@ -306,6 +366,16 @@ function App() {
                           title={c ? chordName(c) : "延续前一个和弦"}
                         >
                           <strong>{c ? symbol(c, ref) : "—"}</strong>
+                          {c && anchor?.chordId === c.id && (
+                            <span
+                              className="anchor-marker"
+                              title={anchorName}
+                              aria-label={`转位锚点：${anchorName}`}
+                            >
+                              <Anchor size={10} />
+                              {anchorName}
+                            </span>
+                          )}
                         </button>
                       </div>
                     );
@@ -464,6 +534,60 @@ function App() {
                   ]}
                   onChange={(reference) => edit({ reference: reference || undefined })}
                 />
+                <section className="inversion-settings" aria-label="右手转位设置">
+                  <Select
+                    label="右手转位"
+                    value={isAnchor ? String(anchor!.tone) : "auto"}
+                    options={[
+                      { value: "auto", label: "自动" },
+                      ...inversionOptions(chord, settings.preset).map((o) => ({
+                        value: String(o.tone),
+                        label: o.label,
+                      })),
+                      ...(isAnchor &&
+                      !inversionOptions(chord, settings.preset).some((o) => o.tone === anchor!.tone)
+                        ? [{ value: String(anchor!.tone), label: "原转位不可用，请重选" }]
+                        : []),
+                    ]}
+                    onChange={setInversion}
+                  />
+                  <p className="hint">
+                    右手最低音决定转位，左手低音不变。指定后会替换其他和弦的转位锚点。
+                  </p>
+                  <label className="loop-control">
+                    <input
+                      type="checkbox"
+                      disabled={!isAnchor}
+                      checked={isAnchor && !!anchor?.rotate}
+                      onChange={(e) => {
+                        stop();
+                        if (anchor) setAnchor({ ...anchor, rotate: e.target.checked });
+                        if (e.target.checked) setLoop(true);
+                      }}
+                    />
+                    每轮自动切换转位
+                  </label>
+                  {isAnchor && anchor?.rotate && (
+                    <p className="hint">
+                      整段循环结束后切换；无解时暂停，不跳过。
+                      {!loop && "当前循环播放已关闭，自动切换不会执行。"}
+                    </p>
+                  )}
+                  {!isAnchor && anchorChord && (
+                    <p className="hint">
+                      当前锚点：{chordName(anchorChord)} · {anchorName}
+                      <button
+                        className="clear-anchor"
+                        onClick={() => {
+                          stop();
+                          setAnchor(null);
+                        }}
+                      >
+                        解除
+                      </button>
+                    </p>
+                  )}
+                </section>
                 <div className="edit-preview">
                   <strong>{symbol(chord, reference)}</strong>
                   <span>{chordName(chord)}</span>
@@ -476,7 +600,7 @@ function App() {
                   disabled={current === 0 || !beats[current]}
                   onClick={() => {
                     stop();
-                    setBeats(beats.map((c, i) => (i === current ? null : c)));
+                    commitBeats(beats.map((c, i) => (i === current ? null : c)));
                   }}
                 >
                   清除此拍，延续前一个和弦
@@ -555,7 +679,7 @@ function App() {
                     disabled={beats.length >= 128}
                     onClick={() => {
                       stop();
-                      setBeats([...beats, null, null, null, null]);
+                      commitBeats([...beats, null, null, null, null]);
 
                       setCurrent(beats.length);
                     }}
@@ -567,13 +691,18 @@ function App() {
                     onClick={() => {
                       stop();
                       const start = Math.floor(current / 4) * 4;
+                      if (
+                        anchor &&
+                        beats.slice(start, start + 4).some((c) => c?.id === anchor.chordId)
+                      )
+                        setAnchor(null);
                       const next = beats.filter((_, i) => i < start || i >= start + 4);
                       if (start === 0)
                         next[0] = {
                           ...(next[0] || events.chords[events.indices[4]]),
                           reference: referenceAt(events.chords, events.indices[start + 4] ?? 0),
                         };
-                      setBeats(next);
+                      commitBeats(next);
                       setCurrent(Math.min(start, next.length - 1));
                     }}
                   >
@@ -584,7 +713,8 @@ function App() {
                   className="wide subtle"
                   onClick={() => {
                     stop();
-                    setBeats(initial);
+                    setAnchor(null);
+                    commitBeats(initial);
                     setCurrent(0);
                   }}
                 >

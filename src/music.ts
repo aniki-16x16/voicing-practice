@@ -66,6 +66,35 @@ export interface Voicing {
   bass: number;
   right: number[];
 }
+export interface InversionAnchor {
+  chordId: number;
+  tone: number;
+  rotate: boolean;
+}
+export function inversionOptions(c: Chord, preset: Settings["preset"]) {
+  const classical =
+    preset === "full" &&
+    qualities[c.quality].length <= 4 &&
+    !c.quality.includes("sus") &&
+    !c.quality.includes("add");
+  return selectedIntervals(c, preset).map((tone, index) => {
+    const note = spelling(60 + pc(c.root) + tone, c).name;
+    const name = classical ? ["原位", "第一转位", "第二转位", "第三转位"][index] : `最低音 ${note}`;
+    return { tone, name, label: classical ? `${name} · 最低音 ${note}` : name };
+  });
+}
+export function nextInversion(
+  anchor: InversionAnchor | null,
+  chords: Chord[],
+  settings: Settings,
+): InversionAnchor | null {
+  if (!anchor?.rotate) return anchor;
+  const chord = chords.find((c) => c.id === anchor.chordId);
+  if (!chord) return null;
+  const tones = selectedIntervals(chord, settings.preset);
+  const index = tones.indexOf(anchor.tone);
+  return index < 0 ? anchor : { ...anchor, tone: tones[(index + 1) % tones.length] };
+}
 export function degree(root: string, reference: string) {
   const d = mod(letters.indexOf(root[0]) - letters.indexOf(reference[0]), 7);
   let delta = mod(pc(root) - pc(reference) - natural[d]);
@@ -86,7 +115,7 @@ export function selectedIntervals(c: Chord, preset: Settings["preset"]) {
   // A shell keeps the root, third (or suspension), and seventh; triads retain all three tones.
   return all.length >= 4 && !c.quality.includes("add") ? [all[0], all[1], all[3]] : all.slice(0, 3);
 }
-export function candidates(c: Chord, settings: Settings): Voicing[] {
+export function candidates(c: Chord, settings: Settings, lowestTone?: number): Voicing[] {
   const intervals = selectedIntervals(c, settings.preset);
   const pitches = intervals.map((i) => mod(pc(c.root) + i));
   const bass = 36 + pc(c.bass || c.root);
@@ -102,6 +131,8 @@ export function candidates(c: Chord, settings: Settings): Voicing[] {
       n++
     ) {
       const p = pitches.indexOf(mod(n));
+      if (!notes.length && lowestTone !== undefined && mod(n) !== mod(pc(c.root) + lowestTone))
+        continue;
       if (p < 0 || used.includes(p) || (notes.length && n - notes[0] > settings.span)) continue;
       walk([...notes, n], [...used, p]);
     }
@@ -133,14 +164,23 @@ export function transition(a: Voicing, b: Voicing, movement: Settings["movement"
 export function generate(
   chords: Chord[],
   settings: Settings,
+  anchor: InversionAnchor | null = null,
 ): { voices: Voicing[]; error?: string } {
   if (!chords.length) return { voices: [] };
-  const layers = chords.map((c) => candidates(c, settings));
+  const target = anchor && chords.find((c) => c.id === anchor.chordId);
+  if (anchor && (!target || !selectedIntervals(target, settings.preset).includes(anchor.tone)))
+    return {
+      voices: [],
+      error: "指定转位不适用于当前和弦或 Voicing 预设，请重新选择右手转位或改为自动。",
+    };
+  const layers = chords.map((c) =>
+    candidates(c, settings, anchor?.chordId === c.id ? anchor.tone : undefined),
+  );
   const empty = layers.findIndex((l) => !l.length);
   if (empty >= 0)
     return {
       voices: [],
-      error: `第 ${empty + 1} 个和弦 ${chordName(chords[empty])} 没有符合条件的排列。请扩大右手音区或跨度。`,
+      error: `第 ${empty + 1} 个和弦 ${chordName(chords[empty])}${anchor?.chordId === chords[empty].id ? " 的指定右手转位" : ""} 没有符合条件的排列。请扩大右手音区或跨度${anchor?.chordId === chords[empty].id ? "，或修改转位；自动轮换不会跳过此转位" : ""}。`,
     };
   const center = (settings.low + settings.high) / 2;
   const local = (v: Voicing) =>

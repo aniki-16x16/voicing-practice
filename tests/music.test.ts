@@ -4,6 +4,8 @@ import {
   candidates,
   degree,
   generate,
+  nextInversion,
+  inversionOptions,
   mod,
   pc,
   qualities,
@@ -13,6 +15,47 @@ import {
   transition,
 } from "../src/music.ts";
 import type { Chord, Settings } from "../src/music.ts";
+
+test("a middle chord anchor is a hard constraint for every inversion and leaves left bass alone", () => {
+  for (const preset of ["full", "shell"] as const)
+    for (const tone of selectedIntervals(chords[1], preset)) {
+      const options = { ...settings, preset };
+      const anchor = { chordId: 2, tone, rotate: false };
+      const r = generate(chords, options, anchor);
+      assert.equal(r.error, undefined);
+      assert.equal(mod(r.voices[1].right[0]), mod(pc("G") + tone));
+      assert.equal(r.voices[1].bass, 43);
+      assert.deepEqual(r, generate(chords, options, anchor));
+    }
+});
+test("changing the single anchor replaces its target, and clearing restores free generation", () => {
+  const r = generate(chords, settings, { chordId: 3, tone: 7, rotate: false });
+  assert.equal(mod(r.voices[2].right[0]), 7);
+  assert.deepEqual(generate(chords, settings, null), generate(chords, settings));
+});
+test("rotation covers every selected tone, wraps, and never skips an impossible inversion", () => {
+  const chord = { id: 1, root: "C", quality: "M" };
+  const options = { ...settings, low: 60, high: 67 };
+  let a = { chordId: 1, tone: 0, rotate: true };
+  assert.equal(generate([chord], options, a).error, undefined);
+  a = nextInversion(a, [chord], options)!;
+  assert.equal(a.tone, 4);
+  assert.match(generate([chord], options, a).error!, /指定右手转位/);
+  a = nextInversion(a, [chord], options)!;
+  assert.equal(a.tone, 7);
+  a = nextInversion(a, [chord], options)!;
+  assert.equal(a.tone, 0);
+  assert.equal(nextInversion({ ...a, rotate: false }, [chord], options)?.tone, 0);
+  assert.equal(nextInversion(a, [], options), null);
+});
+test("removed tones report an error rather than silently changing the constraint", () => {
+  const a = { chordId: 2, tone: 7, rotate: true };
+  const options = { ...settings, preset: "shell" as const };
+  assert.match(generate(chords, options, a).error!, /重新选择/);
+  assert.deepEqual(nextInversion(a, chords, options), a);
+  assert.equal(inversionOptions(chords[1], "full")[1].name, "第一转位");
+  assert.equal(inversionOptions(chords[1], "shell")[1].name, "最低音 B");
+});
 const settings: Settings = { preset: "full", movement: "smooth", low: 48, high: 77, span: 12 };
 const chords: Chord[] = [
   { id: 1, root: "D", quality: "m7", reference: "C" },
