@@ -1,6 +1,30 @@
 import type { Chord } from "./music";
+import { transposeDegree } from "./music.ts";
 
 export type Beat = Chord | null;
+/** Transpose this segment by degree, stopping at the next explicit key marker. */
+export function changeReference(beats: Beat[], beat: number, reference?: string): Beat[] {
+  if (!beats[beat]) return beats;
+  let previous = "C";
+  for (let i = 0; i < beat; i++) previous = beats[i]?.reference || previous;
+  const from = beats[beat]!.reference || previous;
+  const to = reference || previous;
+  let end = beat + 1;
+  while (end < beats.length && !beats[end]?.reference) end++;
+  return beats.map((chord, index) => {
+    if (!chord || index < beat || index >= end) return chord;
+    const next = {
+      ...chord,
+      root: transposeDegree(chord.root, from, to),
+      ...(chord.bass ? { bass: transposeDegree(chord.bass, from, to) } : {}),
+    };
+    if (index === beat) {
+      if (reference) next.reference = reference;
+      else delete next.reference;
+    }
+    return next;
+  });
+}
 export function adjacentChordBeat(beats: Beat[], current: number, direction: -1 | 1) {
   const starts = beats.flatMap((chord, beat) => (chord ? [beat] : []));
   if (!starts.length) return current;

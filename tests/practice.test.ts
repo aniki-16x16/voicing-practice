@@ -9,8 +9,64 @@ import {
   adjacentChordBeat,
   removeChordAt,
   removeBarAt,
+  changeReference,
 } from "../src/practice.ts";
+import { degree, generate, pc } from "../src/music.ts";
 import type { Beat } from "../src/practice.ts";
+
+test("changing a key preserves root and slash-bass degrees throughout only its segment", () => {
+  const beats: Beat[] = [
+    { id: 1, root: "D", quality: "m7", reference: "C", bass: "F#", extras: ["9"] },
+    null,
+    { id: 2, root: "Gb", quality: "7" },
+    null,
+    { id: 3, root: "C", quality: "M7", reference: "C" },
+    null,
+    null,
+    null,
+  ];
+  const next = changeReference(beats, 0, "D");
+  assert.equal(next[0]!.root, "E");
+  assert.equal(next[0]!.bass, "G#");
+  assert.equal(next[2]!.root, "Ab");
+  assert.equal(degree(next[2]!.root, "D"), "b5");
+  assert.deepEqual(next[0]!.extras, ["9"]);
+  assert.equal(next[0]!.id, 1);
+  assert.equal(next[4], beats[4]); // 同调显式标记也构成下一段边界。
+  assert.equal(next[1], null);
+  assert.equal(beats[0]!.root, "D");
+  const settings = { preset: "full", movement: "smooth", low: 48, high: 77, span: 12 } as const;
+  const result = generate(
+    next.filter((chord) => chord !== null),
+    settings,
+    { chordId: 1, tone: 3, rotate: false },
+  );
+  assert.equal(result.error, undefined);
+  assert.equal(result.voices[0].bass, 36 + pc("G#"));
+  assert.equal(result.voices[0].right[0] % 12, (pc("E") + 3) % 12);
+  assert.deepEqual(changeReference(next, 0, "C"), beats);
+});
+
+test("inserting and removing a mid-bar key transposes inherited degrees and keeps later keys", () => {
+  const beats: Beat[] = [
+    { id: 1, root: "D", quality: "M", reference: "D" },
+    null,
+    { id: 2, root: "F#", quality: "m", bass: "A" },
+    { id: 3, root: "A", quality: "7" },
+    { id: 4, root: "Bb", quality: "M", reference: "Bb" },
+    null,
+    null,
+    null,
+  ];
+  const next = changeReference(beats, 2, "Gb");
+  assert.equal(next[0], beats[0]);
+  assert.equal(next[2]!.root, "Bb");
+  assert.equal(next[2]!.bass, "Db");
+  assert.equal(next[3]!.root, "Db");
+  assert.equal(next[4], beats[4]);
+  assert.deepEqual(changeReference(next, 2), beats);
+  assert.equal(changeReference(beats, 1, "C"), beats);
+});
 
 test("score packs sustained beats without losing durations or bar boundaries", () => {
   const chord = { id: 1, root: "C", quality: "M7" };

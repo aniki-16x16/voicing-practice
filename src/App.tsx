@@ -40,6 +40,7 @@ import {
   adjacentChordBeat,
   removeChordAt,
   removeBarAt,
+  changeReference,
 } from "./practice";
 import type { Beat } from "./practice";
 import { Select } from "./Select";
@@ -70,7 +71,7 @@ const initial: Beat[] = [
 ];
 const defaults: Settings = { preset: "full", movement: "smooth", low: 48, high: 77, span: 12 };
 const emptyChord: Chord = { id: 0, root: "C", quality: "M" };
-const validPitch = (note: string) => /^[A-G](?:#{1,2}|b{1,2})?$/.test(note);
+const validPitch = (note: string) => /^[A-G](?:#+|b+)?$/.test(note);
 const validChord = (c: Chord) =>
   c &&
   validPitch(c.root) &&
@@ -281,19 +282,22 @@ function App() {
   };
   const edit = (patch: Partial<Chord>) => {
     stop();
+    // 先建立当前拍的和弦，再以旧调性计算级数，最后移调整段。
+    const { reference: nextReference, ...chordPatch } = patch;
+    const next = beats.map((c, i) =>
+      i === current
+        ? {
+            ...(c || {
+              ...chord,
+              id: Math.max(0, ...events.chords.map((x) => x.id)) + 1,
+              reference: undefined,
+            }),
+            ...chordPatch,
+          }
+        : c,
+    );
     commitBeats(
-      beats.map((c, i) =>
-        i === current
-          ? {
-              ...(c || {
-                ...chord,
-                id: Math.max(0, ...events.chords.map((x) => x.id)) + 1,
-                reference: undefined,
-              }),
-              ...patch,
-            }
-          : c,
-      ),
+      Object.hasOwn(patch, "reference") ? changeReference(next, current, nextReference) : next,
     );
   };
   const setInversion = (value: string) => {
@@ -643,6 +647,7 @@ function App() {
                   ]}
                   onChange={(reference) => edit({ reference: reference || undefined })}
                 />
+                <p className="hint">切换调性保留本段根音、低音级数，直到下一个明确的调性标记。</p>
                 <section className="inversion-settings" aria-label="右手转位设置">
                   <Select
                     label="右手转位"

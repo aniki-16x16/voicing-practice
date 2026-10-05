@@ -146,6 +146,13 @@ export function rootAtDegree(value: number, reference: string, alteration = 0) {
   if (accidental > 6) accidental -= 12;
   return letters[letter] + (accidental > 0 ? "#".repeat(accidental) : "b".repeat(-accidental));
 }
+/** Keep the written scale degree and its alteration when changing key. */
+export function transposeDegree(note: string, from: string, to: string) {
+  const value = degree(note, from);
+  const signs = value.slice(0, -1);
+  const alteration = signs.length * (signs.startsWith("b") ? -1 : 1);
+  return rootAtDegree(Number(value.at(-1)), to, alteration);
+}
 export function chordParts(c: Chord) {
   const legacy = legacyParts[c.quality];
   const chosen = new Set([...(legacy?.extras || []), ...(c.extras || [])]);
