@@ -1,4 +1,4 @@
-import { spelling } from "./music.ts";
+import { voicingSpelling } from "./music.ts";
 import type { Voicing } from "./music";
 import { scoreSegments, timeline } from "./practice.ts";
 import type { Beat } from "./practice";
@@ -72,9 +72,9 @@ export function scoreNotation(beats: Beat[], voices: Voicing[]) {
     if (beat % 4 === 0 || changed) states.forEach((state) => state.clear());
     previous = reference;
     const defaults = new Map(keySignature(reference).map((sign) => [sign.letter, sign.accidental]));
-    const staves = [voice?.right || [], voice ? [voice.bass] : []].map((notes, staff) => {
+    const staves = [voice?.right || [], voice?.left || []].map((notes, staff) => {
       const state = states[staff];
-      const positions = notes.map((note) => spelling(note, chord, staff === 1));
+      const positions = notes.map((note) => voicingSpelling(note, chord, voice));
       // 同一和弦中同字母、同八度的不同变化音都需明确标记。
       const conflicts = new Set(
         positions

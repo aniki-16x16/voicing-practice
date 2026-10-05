@@ -313,15 +313,24 @@
   display: flex;
   align-items: center;
   gap: 10px;
-  height: 34px;
+  min-height: 34px;
   margin-bottom: 5px;
 }
 .keyboard-heading h2 {
+  flex-shrink: 0;
   font-size: 21px;
   font-weight: 500;
 }
 .keyboard-heading h2 sup {
   font-size: 12px;
+}
+.voicing-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  color: #707e66;
+  font-size: 11px;
+  margin-bottom: 6px;
 }
 .keyboard-heading h2 small {
   font-size: 11px;
@@ -330,6 +339,9 @@
 }
 .note-chips {
   display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  min-width: 0;
   gap: 5px;
   margin-left: auto;
 }
@@ -345,6 +357,7 @@
   background: #f3e7d6;
 }
 .audition {
+  flex-shrink: 0;
   width: 32px;
   height: 32px;
   color: #6c805a;
@@ -909,7 +922,7 @@
     height: 96px;
   }
   .keyboard-heading {
-    height: 29px;
+    min-height: 29px;
   }
   .transport {
     height: 44px;

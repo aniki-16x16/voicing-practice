@@ -31,7 +31,9 @@ import {
   referenceAt,
   references,
   pc,
-  spelling,
+  voicingSpelling,
+  voicingPresets,
+  omittedNotes,
 } from "./music";
 import type { Chord, Settings, Voicing, InversionAnchor } from "./music";
 import {
@@ -69,7 +71,14 @@ const initial: Beat[] = [
   null,
   null,
 ];
-const defaults: Settings = { preset: "full", movement: "smooth", low: 48, high: 77, span: 12 };
+const defaults: Settings = {
+  preset: "basic",
+  movement: "smooth",
+  low: 48,
+  high: 77,
+  span: 12,
+  handLimit: 4,
+};
 const emptyChord: Chord = { id: 0, root: "C", quality: "M" };
 const validPitch = (note: string) => /^[A-G](?:#+|b+)?$/.test(note);
 const validChord = (c: Chord) =>
@@ -226,7 +235,7 @@ function App() {
       if (request !== soundId.current) return;
       const player = instrument.current ?? new ChordAudio(ctx);
       instrument.current = player;
-      player.play([v.bass, ...v.right], duration ?? undefined);
+      player.play([...v.left, ...v.right], duration ?? undefined);
       setError("");
     } catch {
       setError("音频未能启动，请再次点击试听。");
@@ -493,10 +502,10 @@ function App() {
             </h2>
             <div className="note-chips">
               {voice &&
-                [voice.bass, ...voice.right].map((n, i) => {
-                  const s = spelling(n, chord, i === 0);
+                [...voice.left, ...voice.right].map((n, i) => {
+                  const s = voicingSpelling(n, chord, voice);
                   return (
-                    <span className={i === 0 ? "bass-chip" : ""} key={`${n}-${i}`}>
+                    <span className={i < voice.left.length ? "bass-chip" : ""} key={`${n}-${i}`}>
                       {s.name}
                       {s.octave}
                     </span>
@@ -516,6 +525,16 @@ function App() {
               <Volume2 size={16} />
             </button>
           </div>
+          {voice && (
+            <div className="voicing-summary" aria-label="当前排列选音">
+              <span>
+                左手 {voice.left.length} 音 · 右手 {voice.right.length} 音
+              </span>
+              {omittedNotes(chord, voice).length > 0 && (
+                <span>省略：{omittedNotes(chord, voice).join("、")}</span>
+              )}
+            </div>
+          )}
           <Keyboard voice={voice} chord={chord} />
         </section>
         <div className="transport">
@@ -691,11 +710,20 @@ function App() {
                 <Select
                   label="Voicing 预设"
                   value={settings.preset}
-                  options={[
-                    { value: "full", label: "完整和弦" },
-                    { value: "shell", label: "Shell 骨架" },
-                  ]}
+                  options={[...voicingPresets]}
                   onChange={(preset) => configure({ preset: preset as Settings["preset"] })}
+                />
+                <p className="hint">
+                  {voicingPresets.find((preset) => preset.value === settings.preset)?.description}
+                </p>
+                <Select
+                  label="单手音数上限"
+                  value={String(settings.handLimit)}
+                  options={[
+                    { value: "4", label: "4 音" },
+                    { value: "5", label: "5 音" },
+                  ]}
+                  onChange={(value) => configure({ handLimit: Number(value) as 4 | 5 })}
                 />
                 <Select
                   label="连接目标"
@@ -722,16 +750,18 @@ function App() {
                   />
                 </div>
                 <Select
-                  label="右手最大跨度"
+                  label="双手最大跨度"
                   value={String(settings.span)}
                   options={[
-                    { value: "7", label: "纯五度 · 7 半音" },
                     { value: "12", label: "八度 · 12 半音" },
                     { value: "14", label: "九度 · 14 半音" },
                     { value: "16", label: "十度 · 16 半音" },
                   ]}
                   onChange={(span) => configure({ span: Number(span) })}
                 />
+                <p className="hint">
+                  音数与跨度分别限制每只手，左手低音也计入；音区和低音清晰度会共同影响选音。
+                </p>
                 <div className="tempo-control">
                   <span>播放速度</span>
                   <TempoControl value={tempo} onChange={setTempo} />

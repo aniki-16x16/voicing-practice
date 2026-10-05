@@ -35,7 +35,14 @@ test("changing a key preserves root and slash-bass degrees throughout only its s
   assert.equal(next[4], beats[4]); // 同调显式标记也构成下一段边界。
   assert.equal(next[1], null);
   assert.equal(beats[0]!.root, "D");
-  const settings = { preset: "full", movement: "smooth", low: 48, high: 77, span: 12 } as const;
+  const settings = {
+    preset: "basic",
+    movement: "smooth",
+    low: 48,
+    high: 77,
+    span: 12,
+    handLimit: 4,
+  } as const;
   const result = generate(
     next.filter((chord) => chord !== null),
     settings,

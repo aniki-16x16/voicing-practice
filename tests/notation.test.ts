@@ -65,7 +65,11 @@ test("diatonic notes use the global signature; chromatic naturals and sharps per
     null,
     null,
   ];
-  const voices = [66, 65, 65, 66, 65].map((note) => ({ bass: note - 24, right: [note] }));
+  const voices = [66, 65, 65, 66, 65].map((note) => ({
+    bass: note - 24,
+    left: [note - 24],
+    right: [note],
+  }));
   const score = scoreNotation(beats, voices);
   for (const staff of [0, 1])
     assert.deepEqual(
@@ -87,7 +91,7 @@ test("mid-bar modulation resets accidentals immediately, including cancellation 
   ];
   const score = scoreNotation(
     beats,
-    [66, 66, 65].map((note) => ({ bass: note - 24, right: [note] })),
+    [66, 66, 65].map((note) => ({ bass: note - 24, left: [note - 24], right: [note] })),
   );
   assert.deepEqual(
     score.map((segment) => [segment.beat, segment.reference]),
@@ -115,9 +119,9 @@ test("accidental memory is independent across octaves and staves, and handles do
     null,
   ];
   const score = scoreNotation(beats, [
-    { bass: 42, right: [66] },
-    { bass: 54, right: [78] },
-    { bass: 37, right: [69] },
+    { bass: 42, left: [42], right: [66] },
+    { bass: 54, left: [54], right: [78] },
+    { bass: 37, left: [37], right: [69] },
   ]);
   assert.equal(score[1].staves[0][0].displayAccidental, "#");
   assert.equal(score[1].staves[1][0].displayAccidental, "#");

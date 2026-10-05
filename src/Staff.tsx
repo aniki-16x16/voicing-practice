@@ -153,7 +153,7 @@ export function Staff({
                     const color = i === active ? (bass ? "#b8773f" : "#38684f") : "#707e66",
                       accidentalColumns: number[][] = [];
                     return (
-                      <g key={String(bass)}>
+                      <g key={String(bass)} data-hand={bass ? "left" : "right"}>
                         {positions.map((s, j) => {
                           const y = bottom - (s.diatonic - anchor) * 5,
                             nx = noteX + 55 + shifts[j],

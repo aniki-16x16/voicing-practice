@@ -97,15 +97,49 @@ export interface Chord {
   reference?: string;
   bass?: string;
 }
+export const voicingPresets = [
+  {
+    value: "basic",
+    label: "基本排列",
+    description: "完整保留三和弦或七和弦骨架，有余量再加入附加音。",
+  },
+  {
+    value: "shell",
+    label: "Shell 骨架",
+    description: "单低音配根音、三音与七音；挂留和变化五音保留和弦性质。",
+  },
+  {
+    value: "rootless",
+    label: "右手无根排列",
+    description: "左手弹低音，右手省根音，优先三音、七音与所选色彩音。",
+  },
+  {
+    value: "right-rich",
+    label: "右手丰满排列",
+    description: "左手弹低音，右手可省普通五音，并以八度重复根音或五音。",
+  },
+  {
+    value: "left-rich",
+    label: "左手丰满排列",
+    description: "左手以低音、五度和八度支撑，右手精简并补足和弦特征音。",
+  },
+  {
+    value: "both-rich",
+    label: "双手丰满排列",
+    description: "左手保持低音支撑，双手共同分配骨架、色彩音和八度重复。",
+  },
+] as const;
 export interface Settings {
-  preset: "full" | "shell";
+  preset: (typeof voicingPresets)[number]["value"];
   movement: "smooth" | "up" | "down";
   low: number;
   high: number;
   span: number;
+  handLimit: 4 | 5;
 }
 export interface Voicing {
   bass: number;
+  left: number[];
   right: number[];
 }
 export interface InversionAnchor {
@@ -114,7 +148,7 @@ export interface InversionAnchor {
   rotate: boolean;
 }
 export function inversionOptions(c: Chord, preset: Settings["preset"]) {
-  const classical = preset === "full" && chordParts(c).extras.length === 0;
+  const classical = preset === "basic" && chordParts(c).extras.length === 0;
   return selectedIntervals(c, preset).map((tone, index) => {
     const note = spelling(60 + pc(c.root) + tone, c).name;
     const name = classical ? ["原位", "第一转位", "第二转位", "第三转位"][index] : `最低音 ${note}`;
@@ -203,7 +237,8 @@ export function chordIntervals(c: Chord) {
   );
 }
 export function selectedIntervals(c: Chord, preset: Settings["preset"]) {
-  if (preset === "full") return chordIntervals(c);
+  if (preset === "rootless") return chordIntervals(c).filter((tone) => tone !== 0);
+  if (preset !== "shell") return chordIntervals(c);
   const { base, extras } = chordParts(c);
   const core = coreIntervals(c);
   if (qualities[base].length === 3) return core;
@@ -211,54 +246,178 @@ export function selectedIntervals(c: Chord, preset: Settings["preset"]) {
   return [
     0,
     ...core.slice(1, extras.includes("sus2") && extras.includes("sus4") ? 3 : 2),
-    qualities[base][3],
+    ...qualities[base].slice(2).filter((tone) => tone !== 7),
   ];
 }
+
+/** 三音/挂留音、七音和变化五音负责性质，普通五音允许取舍。 */
+function characteristicIntervals(c: Chord) {
+  return coreIntervals(c).filter((tone) => tone !== 0 && tone !== 7);
+}
+
+export function omittedNotes(c: Chord, voice: Voicing) {
+  const played = new Set([...voice.left, ...voice.right].map((note) => mod(note - pc(c.root))));
+  return chordIntervals(c)
+    .filter((tone) => !played.has(mod(tone)))
+    .map((tone) => spelling(60 + pc(c.root) + tone, c).name);
+}
+
+/** 局部代价优先保留所选色彩音，再考虑厚度；重复音不挤占必要音。 */
+export function voicingCost(c: Chord, v: Voicing, settings: Settings) {
+  const played = new Set([...v.left, ...v.right].map((note) => mod(note - pc(c.root))));
+  const core = coreIntervals(c);
+  const omission =
+    settings.preset === "shell"
+      ? 0
+      : chordIntervals(c).reduce((sum, tone) => {
+          if (played.has(mod(tone))) return sum;
+          return sum + (core.includes(tone) ? 6 : [13, 15, 18, 20].includes(tone) ? 48 : 40);
+        }, 0);
+  const center = (settings.low + settings.high) / 2;
+  let cost = omission + Math.abs((v.right[0] + v.right.at(-1)!) / 2 - center) * 0.025;
+  if (settings.preset === "right-rich" || settings.preset === "both-rich")
+    cost += (settings.handLimit - v.right.length) * 5;
+  if (settings.preset === "left-rich" || settings.preset === "both-rich") {
+    // 低音区不为凑满四/五音牺牲清晰度，通常两至三个支撑音。
+    cost += Math.max(0, 3 - v.left.length) * 8;
+    for (const note of v.left.slice(1)) {
+      const distance = note - v.bass;
+      if (distance !== 7 && distance !== 12) cost += 1.5;
+    }
+  }
+  if (settings.preset === "left-rich") cost += v.right.length * 2;
+  return cost;
+}
+
+/** 低音固定；低八度只加纯五度，上方才开放其他音，避免密集低音。 */
+function leftCandidates(c: Chord, settings: Settings): number[][] {
+  const bass = 36 + pc(c.bass || c.root);
+  if (settings.preset !== "left-rich" && settings.preset !== "both-rich") return [[bass]];
+  const pitches = new Set(chordIntervals(c).map((tone) => mod(pc(c.root) + tone)));
+  const available: number[] = [];
+  for (let note = bass + 7; note <= Math.min(64, bass + settings.span); note++) {
+    const distance = note - bass;
+    if (distance < 12 && distance !== 7) continue;
+    if (distance === 12 || pitches.has(mod(note))) available.push(note);
+  }
+  const result: number[][] = [];
+  const walk = (notes: number[], start: number) => {
+    result.push(notes);
+    if (notes.length >= settings.handLimit) return;
+    for (let i = start; i < available.length; i++) {
+      const note = available[i];
+      const last = notes.at(-1)!;
+      if (note - last < (last < 48 ? 5 : 3)) continue;
+      // 除低音八度外，左手支撑音不重复。
+      if (mod(note) !== mod(bass) && notes.some((n) => mod(n) === mod(note))) continue;
+      walk([...notes, note], i + 1);
+    }
+  };
+  walk([bass], 0);
+  return result;
+}
+
 export function candidates(c: Chord, settings: Settings, lowestTone?: number): Voicing[] {
   const intervals = selectedIntervals(c, settings.preset);
   const pitches = intervals.map((i) => mod(pc(c.root) + i));
   const bass = 36 + pc(c.bass || c.root);
   const result: Voicing[] = [];
-  const walk = (notes: number[], used: number[]) => {
-    if (notes.length === pitches.length) {
-      result.push({ bass, right: notes });
-      return;
-    }
-    for (
-      let n = notes.length ? notes[notes.length - 1] + 1 : settings.low;
-      n <= settings.high;
-      n++
-    ) {
-      const p = pitches.indexOf(mod(n));
-      if (!notes.length && lowestTone !== undefined && mod(n) !== mod(pc(c.root) + lowestTone))
-        continue;
-      if (p < 0 || used.includes(p) || (notes.length && n - notes[0] > settings.span)) continue;
-      walk([...notes, n], [...used, p]);
-    }
-  };
-  walk([], []);
-  return result;
+  const richRight = settings.preset === "right-rich" || settings.preset === "both-rich";
+  const split = settings.preset === "left-rich" || settings.preset === "both-rich";
+  for (const left of leftCandidates(c, settings)) {
+    const leftPitches = new Set(left.map((note) => mod(note - pc(c.root))));
+    let required =
+      settings.preset === "basic"
+        ? coreIntervals(c)
+        : settings.preset === "shell"
+          ? intervals
+          : characteristicIntervals(c);
+    if (split) required = required.filter((tone) => !leftPitches.has(mod(tone)));
+    if (
+      settings.preset !== "rootless" &&
+      settings.preset !== "basic" &&
+      settings.preset !== "shell" &&
+      !leftPitches.has(0)
+    )
+      required = [0, ...required];
+    const requiredPitches = required.map((tone) => mod(pc(c.root) + tone));
+    if (requiredPitches.length > settings.handLimit) continue;
+    const low = Math.max(settings.low, left.at(-1)! + 1);
+    const minimum = richRight
+      ? Math.min(settings.handLimit, 3)
+      : Math.max(1, requiredPitches.length);
+    const walk = (notes: number[], counts: Map<number, number>) => {
+      if (notes.length >= minimum && requiredPitches.every((pitch) => counts.has(pitch)))
+        result.push({ bass, left, right: notes });
+      if (notes.length >= settings.handLimit) return;
+      const remaining = requiredPitches.filter((pitch) => !counts.has(pitch)).length;
+      if (remaining > settings.handLimit - notes.length) return;
+      const high = notes.length ? Math.min(settings.high, notes[0] + settings.span) : settings.high;
+      for (let note = notes.length ? notes.at(-1)! + 1 : low; note <= high; note++) {
+        const pitch = mod(note);
+        if (!pitches.includes(pitch)) continue;
+        if (!notes.length && lowestTone !== undefined && pitch !== mod(pc(c.root) + lowestTone))
+          continue;
+        const used = counts.get(pitch) || 0;
+        const tone = mod(pitch - pc(c.root));
+        // 只在不同八度重复根音或普通五音，最多两次。
+        if (used && (!richRight || ![0, 7].includes(tone) || used >= 2)) continue;
+        const next = new Map(counts);
+        next.set(pitch, used + 1);
+        walk([...notes, note], next);
+      }
+    };
+    walk([], new Map());
+  }
+  if (settings.preset === "basic" || settings.preset === "shell" || result.length <= 96)
+    return result;
+  // 丰满预设按最低右手音分桶，保留不同音区的优选候选，控制长进行的计算量。
+  const buckets = new Map<number, Voicing[]>();
+  const ranked = result
+    .map((voice) => ({ voice, cost: voicingCost(c, voice, settings) }))
+    .sort((a, b) => a.cost - b.cost);
+  for (const { voice } of ranked) {
+    const key = voice.right[0];
+    const bucket = buckets.get(key) || [];
+    bucket.push(voice);
+    buckets.set(key, bucket);
+  }
+  const selected: Voicing[] = [];
+  for (let row = 0; selected.length < 96; row++) {
+    let added = false;
+    for (const bucket of buckets.values())
+      if (bucket[row]) {
+        selected.push(bucket[row]);
+        added = true;
+        if (selected.length === 96) break;
+      }
+    if (!added) break;
+  }
+  return selected;
 }
 export function transition(a: Voicing, b: Voicing, movement: Settings["movement"]) {
-  // Align ordered voices; inserting or removing a voice has an explicit cost.
-  const x = a.right,
-    y = b.right;
-  const dp = Array.from({ length: x.length + 1 }, (_, i) =>
-    Array.from({ length: y.length + 1 }, (_, j) => (i === 0 ? j * 9 : j === 0 ? i * 9 : Infinity)),
-  );
-  for (let i = 1; i <= x.length; i++)
-    for (let j = 1; j <= y.length; j++) {
-      const distance = Math.abs(x[i - 1] - y[j - 1]);
-      dp[i][j] = Math.min(
-        dp[i - 1][j - 1] + distance + Math.max(0, distance - 5) * 2,
-        dp[i - 1][j] + 9,
-        dp[i][j - 1] + 9,
-      );
+  const distance = (x: number[], y: number[]) => {
+    const row = Array.from({ length: y.length + 1 }, (_, j) => j * 9);
+    for (let i = 1; i <= x.length; i++) {
+      let diagonal = row[0];
+      row[0] = i * 9;
+      for (let j = 1; j <= y.length; j++) {
+        const distance = Math.abs(x[i - 1] - y[j - 1]);
+        const above = row[j];
+        row[j] = Math.min(
+          diagonal + distance + Math.max(0, distance - 5) * 2,
+          above + 9,
+          row[j - 1] + 9,
+        );
+        diagonal = above;
+      }
     }
-  const top = y[y.length - 1] - x[x.length - 1];
+    return row[y.length];
+  };
+  const top = b.right.at(-1)! - a.right.at(-1)!;
   const direction =
     movement === "up" ? Math.max(0, -top) * 5 : movement === "down" ? Math.max(0, top) * 5 : 0;
-  return dp[x.length][y.length] + Math.abs(a.bass - b.bass) * 0.15 + direction;
+  return distance(a.right, b.right) + distance(a.left, b.left) * 0.15 + direction;
 }
 export function generate(
   chords: Chord[],
@@ -272,27 +431,46 @@ export function generate(
       voices: [],
       error: "指定转位不适用于当前和弦或 Voicing 预设，请重新选择右手转位或改为自动。",
     };
-  const layers = chords.map((c) =>
-    candidates(c, settings, anchor?.chordId === c.id ? anchor.tone : undefined),
-  );
+  // 同一次生成内复用相同和弦与转位的候选；锚点和设置变化后重新生成。
+  const cache = new Map<string, { voices: Voicing[]; costs: number[] }>();
+  const data = chords.map((c) => {
+    const tone = anchor?.chordId === c.id ? anchor.tone : undefined;
+    const key = JSON.stringify([c.root, c.quality, c.extras, c.bass, tone]);
+    let layer = cache.get(key);
+    if (!layer) {
+      const voices = candidates(c, settings, tone);
+      layer = { voices, costs: voices.map((v) => voicingCost(c, v, settings)) };
+      cache.set(key, layer);
+    }
+    return layer;
+  });
+  const layers = data.map((layer) => layer.voices);
   const empty = layers.findIndex((l) => !l.length);
   if (empty >= 0)
     return {
       voices: [],
-      error: `第 ${empty + 1} 个和弦 ${chordName(chords[empty])}${anchor?.chordId === chords[empty].id ? " 的指定右手转位" : ""} 没有符合条件的排列。请扩大右手音区或跨度${anchor?.chordId === chords[empty].id ? "，或修改转位；自动轮换不会跳过此转位" : ""}。`,
+      error: `第 ${empty + 1} 个和弦 ${chordName(chords[empty])}${anchor?.chordId === chords[empty].id ? " 的指定右手转位" : ""} 没有符合条件的排列。请扩大音区、双手跨度或单手音数上限，或更换预设${anchor?.chordId === chords[empty].id ? "、修改转位；自动轮换不会跳过此转位" : ""}。`,
     };
-  const center = (settings.low + settings.high) / 2;
-  const local = (v: Voicing) =>
-    Math.abs((v.right[0] + v.right[v.right.length - 1]) / 2 - center) * 0.025;
-  let costs = layers[0].map(local);
+  let costs = data[0].costs;
   const back: number[][] = [layers[0].map(() => -1)];
+  const transitions = new Map<Voicing[], Map<Voicing[], number[][]>>();
   for (let i = 1; i < layers.length; i++) {
+    const previous = layers[i - 1];
+    const following = layers[i];
+    const pairs = transitions.get(previous) || new Map<Voicing[], number[][]>();
+    let matrix = pairs.get(following);
+    if (!matrix) {
+      matrix = following.map((v) => previous.map((p) => transition(p, v, settings.movement)));
+      pairs.set(following, matrix);
+      transitions.set(previous, pairs);
+    }
     const parents: number[] = [];
-    const next = layers[i].map((v) => {
+    const next = following.map((_, voiceIndex) => {
       let best = Infinity,
         parent = 0;
-      layers[i - 1].forEach((previous, j) => {
-        const cost = costs[j] + transition(previous, v, settings.movement) + local(v);
+      const local = data[i].costs[voiceIndex];
+      previous.forEach((_, j) => {
+        const cost = costs[j] + matrix![voiceIndex][j] + local;
         if (cost < best) {
           best = cost;
           parent = j;
@@ -348,4 +526,8 @@ export function spelling(midi: number, c: Chord, bass = false) {
   const accidental = [...name.slice(1)].reduce((n, a) => n + (a === "#" ? 1 : -1), 0);
   const octave = (midi - natural[letter] - accidental) / 12 - 1;
   return { name, octave, diatonic: octave * 7 + letter, accidental: name.slice(1) };
+}
+
+export function voicingSpelling(midi: number, c: Chord, voice: Voicing) {
+  return spelling(midi, c, voice.left.includes(midi) && mod(midi) === mod(voice.bass));
 }

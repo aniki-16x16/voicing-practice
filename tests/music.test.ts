@@ -18,11 +18,12 @@ import {
   selectedIntervals,
   spelling,
   transition,
+  omittedNotes,
 } from "../src/music.ts";
 import type { Chord, Settings } from "../src/music.ts";
 
 test("a middle chord anchor is a hard constraint for every inversion and leaves left bass alone", () => {
-  for (const preset of ["full", "shell"] as const)
+  for (const preset of ["basic", "shell"] as const)
     for (const tone of selectedIntervals(chords[1], preset)) {
       const options = { ...settings, preset };
       const anchor = { chordId: 2, tone, rotate: false };
@@ -58,10 +59,17 @@ test("removed tones report an error rather than silently changing the constraint
   const options = { ...settings, preset: "shell" as const };
   assert.match(generate(chords, options, a).error!, /重新选择/);
   assert.deepEqual(nextInversion(a, chords, options), a);
-  assert.equal(inversionOptions(chords[1], "full")[1].name, "第一转位");
+  assert.equal(inversionOptions(chords[1], "basic")[1].name, "第一转位");
   assert.equal(inversionOptions(chords[1], "shell")[1].name, "最低音 B");
 });
-const settings: Settings = { preset: "full", movement: "smooth", low: 48, high: 77, span: 12 };
+const settings: Settings = {
+  preset: "basic",
+  movement: "smooth",
+  low: 48,
+  high: 77,
+  span: 12,
+  handLimit: 4,
+};
 const chords: Chord[] = [
   { id: 1, root: "D", quality: "m7", reference: "C" },
   { id: 2, root: "G", quality: "7" },
@@ -78,7 +86,7 @@ test("major-reference notation preserves enharmonic spelling", () => {
 test("all roots and qualities generate only requested pitches within bounds", () => {
   for (const root of roots)
     for (const quality of Object.keys(qualities))
-      for (const preset of ["full", "shell"] as const) {
+      for (const preset of ["basic", "shell"] as const) {
         const chord = { id: 1, root, quality },
           options = { ...settings, preset, span: 16, high: 84 };
         const { voices, error } = generate([chord], options);
@@ -88,12 +96,25 @@ test("all roots and qualities generate only requested pitches within bounds", ()
         assert.ok(v.right[0] >= options.low);
         assert.ok(v.right.at(-1)! <= options.high);
         assert.ok(v.right.at(-1)! - v.right[0] <= options.span);
-        assert.deepEqual(
-          v.right.map((n) => mod(n - pc(root))).sort((a, b) => a - b),
-          selectedIntervals(chord, preset)
-            .map((n) => mod(n))
-            .sort((a, b) => a - b),
+        const played = v.right.map((n) => mod(n - pc(root)));
+        const parts = chordParts(chord);
+        const required =
+          preset === "shell"
+            ? selectedIntervals(chord, preset)
+            : chordIntervals({
+                ...chord,
+                quality: parts.base,
+                extras: parts.extras.filter((extra) => extra.startsWith("sus")),
+              });
+        assert.ok(required.every((tone) => played.includes(mod(tone))));
+        assert.ok(
+          played.every((tone) =>
+            selectedIntervals(chord, preset)
+              .map((n) => mod(n))
+              .includes(tone),
+          ),
         );
+        assert.ok(v.right.length <= options.handLimit);
         for (const n of [v.bass, ...v.right]) {
           const s = spelling(n, chord);
           assert.equal(pc(s.name), mod(n));
@@ -173,7 +194,7 @@ test("legacy chord qualities split into the new editor without changing their to
 
 test("multiple extensions affect voicing and staff spelling, while shell keeps the core", () => {
   const chord = { id: 1, root: "C", quality: "7", extras: ["9", "#11", "13"] };
-  assert.deepEqual(selectedIntervals(chord, "full"), [0, 4, 7, 10, 14, 18, 21]);
+  assert.deepEqual(selectedIntervals(chord, "basic"), [0, 4, 7, 10, 14, 18, 21]);
   assert.deepEqual(selectedIntervals(chord, "shell"), [0, 4, 10]);
   assert.equal(spelling(62, chord).name, "D");
   assert.equal(spelling(66, chord).name, "F#");
@@ -182,19 +203,21 @@ test("multiple extensions affect voicing and staff spelling, while shell keeps t
   assert.equal(error, undefined);
   assert.deepEqual(
     voices[0].right.map((pitch) => mod(pitch)).sort((a, b) => a - b),
-    [0, 2, 4, 6, 7, 9, 10],
+    [0, 4, 7, 10],
   );
+  assert.deepEqual(omittedNotes(chord, voices[0]), ["D", "F#", "A"]);
   assert.equal(spelling(63, { ...chord, extras: ["#9"] }).name, "D#");
   assert.equal(spelling(68, { ...chord, extras: ["b13"] }).name, "Ab");
 });
 
 test("suspensions replace thirds and duplicate extra pitch classes do not create impossible voices", () => {
   const suspended = { id: 1, root: "C", quality: "m7", extras: ["sus2", "sus4", "9"] };
-  assert.deepEqual(selectedIntervals(suspended, "full"), [0, 2, 5, 7, 10]);
+  assert.deepEqual(selectedIntervals(suspended, "basic"), [0, 2, 5, 7, 10]);
   assert.deepEqual(selectedIntervals(suspended, "shell"), [0, 2, 5, 10]);
   const six = { id: 2, root: "C", quality: "M", extras: ["6", "13"] };
   assert.deepEqual(chordIntervals(six), [0, 4, 7, 9]);
   assert.equal(spelling(69, six).name, "A");
-  assert.equal(generate([suspended, six], settings).error, undefined);
+  assert.match(generate([suspended, six], settings).error!, /单手音数上限/);
+  assert.equal(generate([suspended, six], { ...settings, handLimit: 5 }).error, undefined);
   assert.equal(spelling(69, { id: 3, root: "C", quality: "dim7" }).name, "Bbb");
 });
