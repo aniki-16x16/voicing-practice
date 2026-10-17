@@ -1014,6 +1014,28 @@
 .drawer-content > .select-field {
   flex: none;
 }
+.humanization-settings {
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+  flex-shrink: 0;
+  padding-top: 17px;
+  border-top: 1px solid #dbe3d0;
+}
+.humanization-settings h3 {
+  font-size: 13px;
+  font-weight: 550;
+}
+.humanization-settings > .hint {
+  margin-top: -7px;
+}
+.humanization-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 12px;
+}
 
 .voicing-controls {
   display: flex;
@@ -1035,22 +1057,7 @@
 .solo-left-control {
   display: flex;
   align-items: center;
-  gap: 9px;
   min-height: 52px;
-  padding: 0 2px;
-  cursor: pointer;
-  white-space: nowrap;
-  font-size: 13px;
-  font-weight: 500;
-  touch-action: manipulation;
-  user-select: none;
-}
-.solo-left-control input {
-  width: 26px;
-  height: 26px;
-  margin: 0;
-  accent-color: #365442;
-  cursor: pointer;
 }
 .voicing-menu {
   max-height: min(250px, calc(100dvh - 16px));

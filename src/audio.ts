@@ -7,6 +7,18 @@ export const soundSettings = {
   release: 0.055,
 };
 
+export type HumanizationSettings = {
+  enabled: boolean;
+  timingMs: number;
+  volumePercent: number;
+};
+
+export const defaultHumanization: HumanizationSettings = {
+  enabled: true,
+  timingMs: 20,
+  volumePercent: 8,
+};
+
 type Note = {
   oscillator: OscillatorNode;
   gain: GainNode;
@@ -40,24 +52,38 @@ export class ChordAudio {
     this.output.connect(context.destination);
   }
 
-  play(pitches: number[], duration?: number, time = this.context.currentTime) {
+  play(
+    pitches: number[],
+    duration?: number,
+    time = this.context.currentTime,
+    humanization?: HumanizationSettings,
+  ) {
     this.release(time);
-    const peak = soundSettings.level / pitches.length;
-    this.active = pitches.map((pitch) => {
+    if (!pitches.length) return;
+    const timing = humanization?.enabled ? humanization.timingMs / 1000 : 0;
+    const volume = humanization?.enabled ? humanization.volumePercent / 100 : 0;
+    // 每次发音重新采样；最早的音保持在拍点，其余音只作轻微延迟。
+    const offsets = pitches.map(() => (timing ? Math.random() * timing : 0));
+    const first = Math.min(...offsets);
+    this.active = pitches.map((pitch, index) => {
+      const start = time + (offsets[index] - first);
+      const peak =
+        (soundSettings.level / pitches.length) *
+        (1 + (volume ? (Math.random() * 2 - 1) * volume : 0));
       const oscillator = this.context.createOscillator();
       oscillator.setPeriodicWave(this.wave);
       oscillator.frequency.value = 440 * 2 ** ((pitch - 69) / 12);
       const gain = this.context.createGain();
-      gain.gain.setValueAtTime(0, time);
-      gain.gain.linearRampToValueAtTime(peak, time + soundSettings.attack);
+      gain.gain.setValueAtTime(0, start);
+      gain.gain.linearRampToValueAtTime(peak, start + soundSettings.attack);
       // 起音后仅轻微回落，随后保持延音，不再按和弦时长衰减到静音。
       gain.gain.linearRampToValueAtTime(
         peak * soundSettings.sustain,
-        time + soundSettings.attack + soundSettings.decay,
+        start + soundSettings.attack + soundSettings.decay,
       );
       oscillator.connect(gain);
       gain.connect(this.output);
-      const note: Note = { oscillator, gain, start: time, peak };
+      const note: Note = { oscillator, gain, start, peak };
       this.notes.add(note);
       oscillator.onended = () => {
         oscillator.disconnect();
@@ -65,7 +91,7 @@ export class ChordAudio {
         this.notes.delete(note);
         this.active = this.active.filter((active) => active !== note);
       };
-      oscillator.start(time);
+      oscillator.start(start);
       if (duration !== undefined) this.releaseNote(note, time + duration);
       return note;
     });

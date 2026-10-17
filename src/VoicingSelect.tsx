@@ -1,6 +1,7 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { ChevronDown, Check } from "lucide-react";
 import type { Settings } from "./music";
+import { Switch } from "./Switch";
 
 const labels = { root: "根音", shell: "Shell", free: "自由配音" };
 export function VoicingSelect({
@@ -86,17 +87,18 @@ export function VoicingSelect({
           <ChevronDown size={16} />
         </button>
       </div>
-      <label className="solo-left-control">
-        <input
-          type="checkbox"
+      <div className="solo-left-control">
+        <Switch
+          label="单练左手"
           checked={!!settings.soloLeft}
-          onChange={(event) => {
+          checkedText="单练左手"
+          uncheckedText="单练左手"
+          onChange={(soloLeft) => {
             setOpen(false);
-            onChange({ soloLeft: event.target.checked });
+            onChange({ soloLeft });
           }}
         />
-        <span>单练左手</span>
-      </label>
+      </div>
       {open && (
         <div
           ref={menu}

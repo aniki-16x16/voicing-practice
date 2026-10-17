@@ -14,7 +14,8 @@ import {
   Repeat,
 } from "lucide-react";
 import { DragScroll } from "./DragScroll";
-import { ChordAudio } from "./audio";
+import { ChordAudio, defaultHumanization } from "./audio";
+import type { HumanizationSettings } from "./audio";
 import {
   chordName,
   chordParts,
@@ -49,6 +50,8 @@ import { VoicingSelect } from "./VoicingSelect";
 import { Select } from "./Select";
 import { DegreeSelect } from "./DegreeSelect";
 import { TempoControl } from "./TempoControl";
+import { Slider } from "./Slider";
+import { Switch } from "./Switch";
 import { DeleteBarButton } from "./DeleteBarButton";
 import { Staff } from "./Staff";
 import Keyboard from "./Keyboard";
@@ -113,6 +116,27 @@ function restore(): Beat[] {
 }
 const noteOptions = (notes: number[]) =>
   notes.map((n) => ({ value: String(n), label: noteName(n) }));
+function restoreHumanization(): HumanizationSettings {
+  try {
+    const saved = JSON.parse(localStorage.getItem("voicing-humanization-v1") || "null");
+    if (saved && typeof saved === "object") {
+      return {
+        enabled: typeof saved.enabled === "boolean" ? saved.enabled : defaultHumanization.enabled,
+        timingMs:
+          typeof saved.timingMs === "number" && Number.isFinite(saved.timingMs)
+            ? Math.round(Math.max(0, Math.min(60, saved.timingMs)))
+            : defaultHumanization.timingMs,
+        volumePercent:
+          typeof saved.volumePercent === "number" && Number.isFinite(saved.volumePercent)
+            ? Math.round(Math.max(0, Math.min(20, saved.volumePercent)))
+            : defaultHumanization.volumePercent,
+      };
+    }
+  } catch {
+    /* Local storage is optional. */
+  }
+  return { ...defaultHumanization };
+}
 function Drawer({
   children,
   title,
@@ -160,6 +184,7 @@ function Drawer({
 function App() {
   const [beats, setBeats] = useState<Beat[]>(restore),
     [settings, setSettings] = useState(defaults),
+    [humanization, setHumanization] = useState(restoreHumanization),
     [current, setCurrent] = useState(0);
   const [anchors, setAnchors] = useState<TopNoteAnchor[]>(() => {
     try {
@@ -206,6 +231,13 @@ function App() {
       /* optional */
     }
   }, [anchors]);
+  useEffect(() => {
+    try {
+      localStorage.setItem("voicing-humanization-v1", JSON.stringify(humanization));
+    } catch {
+      /* Local storage is optional. */
+    }
+  }, [humanization]);
   const commitBeats = (next: Beat[]) => {
     setAnchors((previous) =>
       previous.filter((anchor) => next.some((c) => c?.id === anchor.chordId)),
@@ -238,7 +270,7 @@ function App() {
       if (request !== soundId.current) return;
       const player = instrument.current ?? new ChordAudio(ctx);
       instrument.current = player;
-      player.play([...v.left, ...v.right], duration ?? undefined);
+      player.play([...v.left, ...v.right], duration ?? undefined, ctx.currentTime, humanization);
       setError("");
     } catch {
       setError("音频未能启动，请再次点击试听。");
@@ -275,7 +307,20 @@ function App() {
     return () => window.clearTimeout(timer);
     // The timer advances beats; sustained slots do not retrigger the chord.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [playing, current, tempo, loop, voice, beats.length, cycle, index, events, anchors, settings]);
+  }, [
+    playing,
+    current,
+    tempo,
+    loop,
+    voice,
+    beats.length,
+    cycle,
+    index,
+    events,
+    anchors,
+    settings,
+    humanization,
+  ]);
   useEffect(
     () => () => {
       soundId.current++;
@@ -766,6 +811,48 @@ function App() {
                   <TempoControl value={tempo} onChange={setTempo} />
                   <p className="hint">点击加减微调，或直接输入；按住 Shift 每次调整 5 BPM。</p>
                 </div>
+                <section className="humanization-settings" aria-label="人性化设置">
+                  <h3>人性化</h3>
+                  <p className="hint">每次播放和试听时，重新随机分配各声部的起音与音量。</p>
+                  <div className="humanization-toggle">
+                    <span>人性化开关</span>
+                    <Switch
+                      label="人性化开关"
+                      checked={humanization.enabled}
+                      checkedText="开启"
+                      uncheckedText="关闭"
+                      onChange={(enabled) =>
+                        setHumanization((previous) => ({ ...previous, enabled }))
+                      }
+                    />
+                  </div>
+                  <Slider
+                    label="起音时间差"
+                    value={humanization.timingMs}
+                    max={60}
+                    formatValue={(value) => `${value} ms`}
+                    startLabel="整齐"
+                    endLabel="松弛"
+                    description="各音起音之间的最大时间差，最早的音保持在拍点。"
+                    disabled={!humanization.enabled}
+                    onChange={(timingMs) =>
+                      setHumanization((previous) => ({ ...previous, timingMs }))
+                    }
+                  />
+                  <Slider
+                    label="声部音量浮动"
+                    value={humanization.volumePercent}
+                    max={20}
+                    formatValue={(value) => `±${value}%`}
+                    startLabel="均匀"
+                    endLabel="起伏"
+                    description="各声部独立随机增减音量，0% 时音量一致。"
+                    disabled={!humanization.enabled}
+                    onChange={(volumePercent) =>
+                      setHumanization((previous) => ({ ...previous, volumePercent }))
+                    }
+                  />
+                </section>
               </>
             )}
           </div>

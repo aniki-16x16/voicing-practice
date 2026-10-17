@@ -72,6 +72,35 @@
         rms(interrupted, 0.15, 0.3) < 0.000001,
         "interrupting an attack cancels old envelope events",
       );
+      const humanization = { enabled: true, timingMs: 60, volumePercent: 20 };
+      const humanized = await render((player) => {
+        for (let i = 0; i < 10; i++) {
+          player.play([48, 60, 64, 67, 71], undefined, i * 0.18, humanization);
+        }
+        player.release(1.8);
+      });
+      assert(
+        humanized.every((sample) => Number.isFinite(sample) && Math.abs(sample) < 1),
+        "humanized chords do not clip at maximum settings",
+      );
+      assert(rms(humanized, 1.9, 2.1) < 0.000001, "humanized playback stops completely");
+      const originalRandom = Math.random;
+      let humanizedInterrupted;
+      try {
+        let sample = 0;
+        Math.random = () => (++sample % 2 ? 0 : 0.99);
+        humanizedInterrupted = await render((player) => {
+          player.play([48, 60, 64, 67], 0.02, 0, humanization);
+          player.play([50, 62, 65, 69], undefined, 0.003, humanization);
+          player.release(0.006);
+        });
+      } finally {
+        Math.random = originalRandom;
+      }
+      assert(
+        rms(humanizedInterrupted, 0.07, 0.3) < 0.000001,
+        "stopping before delayed note onsets cancels all pending voices",
+      );
       document.querySelector("#result").textContent = JSON.stringify(
         { passed: true, checks },
         null,
