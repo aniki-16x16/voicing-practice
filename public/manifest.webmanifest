@@ -1,0 +1,24 @@
+{
+  "id": "./",
+  "name": "和弦之间 · Voicing Practice",
+  "short_name": "和弦之间",
+  "description": "设定和声进行，练习确定性的键盘和弦连接。",
+  "lang": "zh-CN",
+  "start_url": "./",
+  "scope": "./",
+  "display": "fullscreen",
+  "background_color": "#f5f5ee",
+  "theme_color": "#38634c",
+  "icons": [
+    {
+      "src": "icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}

@@ -35,6 +35,14 @@
 
 ## 开发
 
+### iPad 主屏幕应用
+
+部署更新后，在 Safari 中刷新页面，通过「分享 → 添加到主屏幕」安装，再从主屏幕图标启动，即可隐藏浏览器地址栏、标签栏与工具栏。已有的旧快捷方式需要移除后重新添加；iPadOS 26 及以上添加时保持「作为 Web App 打开」（Open as Web App）开启。系统状态栏和底部手势条由 iPadOS 控制，仍可能显示。
+
+应用清单请求全屏显示，并提供兼容旧版 iPadOS 的独立应用声明。启动地址、作用域和图标均跟随部署目录，兼容本地开发路径与 GitHub Pages 的 `/voicing-practice/` 路径。主页面与抽屉会为系统安全区域保留空间；这项配置不提供离线缓存。
+
+### 本地开发
+
 使用 Node.js 24，运行 npm install、npm run dev。验证命令：npm test、npm run build、npm run lint。
 
 和声规则位于 src/music.ts，拍位与分段移调规则位于 src/practice.ts，调号及临时升降号规则位于 src/notation.ts。谱面、自定义下拉框与键盘分别位于 src/Staff.tsx、src/Select.tsx 和 src/Keyboard.tsx。测试覆盖和弦生成、分段移调、最高音约束与左手轮换、调号切换、临时升降号、二度音簇错位和拍位延续。
