@@ -50,7 +50,7 @@ test("changing a key preserves root and slash-bass degrees throughout only its s
   );
   assert.equal(result.error, undefined);
   assert.equal(result.voices[0].bass, 36 + pc("G#"));
-  assert.equal(result.voices[0].right[0] % 12, (pc("E") + 3) % 12);
+  assert.equal(result.voices[0].right.at(-1)! % 12, (pc("E") + 3) % 12);
   assert.deepEqual(changeReference(next, 0, "C"), beats);
 });
 

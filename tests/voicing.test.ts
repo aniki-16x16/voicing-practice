@@ -9,7 +9,8 @@ import {
   pc,
   roots,
   voicingPresets,
-  nextInversion,
+  nextTopNote,
+  topNoteOptions,
   voicingSpelling,
   transition,
   voicingCost,
@@ -60,7 +61,7 @@ test("a long repeated progression keeps anchor and chord-specific extensions ind
   const result = generate(progression, options, { chordId: 64, tone: 4, rotate: false });
   assert.equal(result.error, undefined);
   assert.equal(result.voices.length, 128);
-  assert.equal(mod(result.voices[64].right[0]), 4);
+  assert.equal(mod(result.voices[64].right.at(-1)!), 4);
   for (let i = 0; i < progression.length; i++) {
     const v = result.voices[i];
     assert.equal(v.bass, 36 + pc(progression[i].root));
@@ -180,13 +181,13 @@ test("anchors remain hard constraints in rich presets and rootless rejects a sav
       { chordId: 1, tone: 4, rotate: false },
     );
     assert.equal(result.error, undefined);
-    assert.equal(mod(result.voices[0].right[0]), 4);
+    assert.equal(mod(result.voices[0].right.at(-1)!), 4);
     assert.equal(result.voices[0].bass, 36);
   }
   const anchor = { chordId: 1, tone: 0, rotate: true };
   const options = { ...defaults, preset: "rootless" as const };
   assert.match(generate([chord], options, anchor).error!, /重新选择/);
-  assert.deepEqual(nextInversion(anchor, [chord], options), anchor);
+  assert.deepEqual(nextTopNote(anchor, [chord], options), anchor);
   assert.match(
     generate([{ id: 2, root: "C", quality: "7" }], {
       ...defaults,
@@ -249,15 +250,16 @@ test("independent hand modes use only chord tones and respect bounds", () => {
         }
 });
 
-test("solo left overrides hand modes and anchors without mutating them, and renders an empty right staff", () => {
+test("solo left applies the top note anchor and rotation, and renders an empty right staff", () => {
   const progression = [chord, { id: 2, root: "F", quality: "M7" }];
   const settings: Settings = { ...defaults, preset: "right-rich", leftMode: "free" };
-  const anchor = { chordId: 1, tone: 14, rotate: true };
+  const anchor = { chordId: 1, tone: 4, rotate: true };
   const before = generate(progression, settings, anchor);
   const solo = { ...settings, soloLeft: true, low: 72, high: 72 };
   const result = generate(progression, solo, anchor);
   assert.equal(result.error, undefined);
   assert.equal(result.voices.length, 2);
+  assert.equal(mod(result.voices[0].left.at(-1)!), 4);
   for (const v of result.voices) {
     assert.deepEqual(v.right, []);
     assert.ok(v.left.length >= 3);
@@ -265,9 +267,47 @@ test("solo left overrides hand modes and anchors without mutating them, and rend
   }
   for (const movement of ["smooth", "up", "down"] as const)
     assert.ok(Number.isFinite(transition(result.voices[0], result.voices[1], movement)));
-  assert.deepEqual(nextInversion(anchor, progression, solo), anchor);
+  assert.equal(nextTopNote(anchor, progression, solo)?.tone, 10);
   assert.deepEqual(generate(progression, settings, anchor), before);
   const score = scoreNotation([chord, null, null, null], [result.voices[0]]);
   assert.equal(score[0].staves[0].length, 0);
   assert.equal(score[0].staves[1].length, result.voices[0].left.length);
+});
+
+test("every solo left Shell tone can be the highest note across roots and qualities", () => {
+  for (const root of roots)
+    for (const quality of ["M", "m7", "7", "dim7", "m7b5", "7(#5,b9)"]) {
+      const c = { id: 1, root, quality };
+      const settings: Settings = { ...defaults, preset: "rootless", soloLeft: true };
+      const options = topNoteOptions(c, settings);
+      assert.ok(options.some((o) => o.tone === 0));
+      let anchor = { chordId: 1, tone: options[0].tone, rotate: true };
+      for (const option of options) {
+        assert.equal(anchor.tone, option.tone);
+        const result = generate([c], settings, anchor);
+        assert.equal(result.error, undefined, JSON.stringify({ c, option }));
+        const v = result.voices[0];
+        assert.deepEqual(v.right, []);
+        assert.equal(mod(v.left.at(-1)!), mod(pc(root) + option.tone));
+        assert.ok(v.left.length <= settings.handLimit);
+        assert.ok(v.left.at(-1)! - v.left[0] <= settings.span);
+        assert.equal(v.bass, v.left[0]);
+        assert.deepEqual(classes(v.left), classes(play(c, { soloLeft: true }).left));
+        anchor = nextTopNote(anchor, [c], settings)!;
+      }
+      assert.equal(anchor.tone, options[0].tone);
+    }
+});
+
+test("solo left preserves explicit slash bass and reports unavailable or impossible top notes", () => {
+  const c = { id: 1, root: "C", quality: "7", bass: "D" };
+  const settings: Settings = { ...defaults, soloLeft: true };
+  const anchor = { chordId: 1, tone: 0, rotate: true };
+  const result = generate([c], settings, anchor);
+  assert.equal(result.error, undefined);
+  assert.equal(result.voices[0].bass, 50);
+  assert.equal(mod(result.voices[0].left.at(-1)!), 0);
+  assert.match(generate([c], settings, { ...anchor, tone: 14 }).error!, /重新选择最高音/);
+  assert.match(generate([c], { ...settings, span: 5 }, anchor).error!, /指定最高音/);
+  assert.equal(generate([c], settings).error, undefined);
 });

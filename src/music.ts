@@ -144,28 +144,32 @@ export interface Voicing {
   left: number[];
   right: number[];
 }
-export interface InversionAnchor {
+export interface TopNoteAnchor {
   chordId: number;
   tone: number;
   rotate: boolean;
 }
-export function inversionOptions(c: Chord, preset: Settings["preset"]) {
-  const classical = preset === "basic" && chordParts(c).extras.length === 0;
-  return selectedIntervals(c, preset).map((tone, index) => {
+function topNoteIntervals(c: Chord, settings: Pick<Settings, "preset" | "soloLeft">) {
+  return selectedIntervals(c, settings.soloLeft ? "shell" : settings.preset);
+}
+export function topNoteOptions(c: Chord, settings: Pick<Settings, "preset" | "soloLeft">) {
+  return topNoteIntervals(c, settings).map((tone) => {
     const note = spelling(60 + pc(c.root) + tone, c).name;
-    const name = classical ? ["原位", "第一转位", "第二转位", "第三转位"][index] : `最低音 ${note}`;
-    return { tone, name, label: classical ? `${name} · 最低音 ${note}` : name };
+    const written = degree(note, c.root);
+    const number = Number(written.at(-1)) + (tone >= 12 ? 7 : 0);
+    const name = `${number} 音`;
+    return { tone, name, label: name };
   });
 }
-export function nextInversion(
-  anchor: InversionAnchor | null,
+export function nextTopNote(
+  anchor: TopNoteAnchor | null,
   chords: Chord[],
   settings: Settings,
-): InversionAnchor | null {
-  if (settings.soloLeft || !anchor?.rotate) return anchor;
+): TopNoteAnchor | null {
+  if (!anchor?.rotate) return anchor;
   const chord = chords.find((c) => c.id === anchor.chordId);
   if (!chord) return null;
-  const tones = selectedIntervals(chord, settings.preset);
+  const tones = topNoteIntervals(chord, settings);
   const index = tones.indexOf(anchor.tone);
   return index < 0 ? anchor : { ...anchor, tone: tones[(index + 1) % tones.length] };
 }
@@ -345,9 +349,36 @@ function leftCandidates(c: Chord, settings: Settings): number[][] {
   return result;
 }
 
-export function candidates(c: Chord, settings: Settings, lowestTone?: number): Voicing[] {
-  if (settings.soloLeft)
+/** 单练左手按最高音排列 Shell；指定斜杠低音时仍保留该低音。 */
+function soloLeftCandidates(c: Chord, settings: Settings, topTone?: number): Voicing[] {
+  if (topTone === undefined)
     return leftCandidates(c, settings).map((left) => ({ bass: left[0], left, right: [] }));
+  const pitches = topNoteIntervals(c, settings).map((tone) => mod(pc(c.root) + tone));
+  const bass = 36 + pc(c.bass || c.root);
+  const shellBass = bass < 43 ? bass + 12 : bass;
+  const result: Voicing[] = [];
+  for (let top = 43; top <= 65; top++) {
+    if (mod(top) !== mod(pc(c.root) + topTone)) continue;
+    const notes = pitches
+      .filter((pitch) => !c.bass || pitch !== mod(shellBass) || pitch === mod(top))
+      .map((pitch) => top - mod(top - pitch));
+    if (c.bass) notes.push(shellBass);
+    const left = [...new Set(notes)].sort((a, b) => a - b);
+    if (
+      left[0] < 43 ||
+      (c.bass && left[0] !== shellBass) ||
+      left.at(-1) !== top ||
+      left.length > settings.handLimit ||
+      top - left[0] > settings.span
+    )
+      continue;
+    result.push({ bass: left[0], left, right: [] });
+  }
+  return result;
+}
+
+export function candidates(c: Chord, settings: Settings, topTone?: number): Voicing[] {
+  if (settings.soloLeft) return soloLeftCandidates(c, settings, topTone);
   const intervals = selectedIntervals(c, settings.preset);
   const pitches = intervals.map((i) => mod(pc(c.root) + i));
   const bass = 36 + pc(c.bass || c.root);
@@ -380,7 +411,11 @@ export function candidates(c: Chord, settings: Settings, lowestTone?: number): V
       ? Math.min(settings.handLimit, 3)
       : Math.max(1, requiredPitches.length);
     const walk = (notes: number[], counts: Map<number, number>) => {
-      if (notes.length >= minimum && requiredPitches.every((pitch) => counts.has(pitch)))
+      if (
+        notes.length >= minimum &&
+        requiredPitches.every((pitch) => counts.has(pitch)) &&
+        (topTone === undefined || mod(notes.at(-1)!) === mod(pc(c.root) + topTone))
+      )
         result.push({ bass: left[0] ?? bass, left, right: notes });
       if (notes.length >= settings.handLimit) return;
       const remaining = requiredPitches.filter((pitch) => !counts.has(pitch)).length;
@@ -389,8 +424,6 @@ export function candidates(c: Chord, settings: Settings, lowestTone?: number): V
       for (let note = notes.length ? notes.at(-1)! + 1 : low; note <= high; note++) {
         const pitch = mod(note);
         if (!pitches.includes(pitch)) continue;
-        if (!notes.length && lowestTone !== undefined && pitch !== mod(pc(c.root) + lowestTone))
-          continue;
         const used = counts.get(pitch) || 0;
         const tone = mod(pitch - pc(c.root));
         // 只在不同八度重复根音或普通五音，最多两次。
@@ -459,17 +492,16 @@ export function transition(a: Voicing, b: Voicing, movement: Settings["movement"
 export function generate(
   chords: Chord[],
   settings: Settings,
-  anchor: InversionAnchor | null = null,
+  anchor: TopNoteAnchor | null = null,
 ): { voices: Voicing[]; error?: string } {
   if (!chords.length) return { voices: [] };
-  if (settings.soloLeft) anchor = null;
   const target = anchor && chords.find((c) => c.id === anchor.chordId);
-  if (anchor && (!target || !selectedIntervals(target, settings.preset).includes(anchor.tone)))
+  if (anchor && (!target || !topNoteIntervals(target, settings).includes(anchor.tone)))
     return {
       voices: [],
-      error: "指定转位不适用于当前和弦或 Voicing 预设，请重新选择右手转位或改为自动。",
+      error: "指定最高音不适用于当前和弦或 Voicing 预设，请重新选择最高音或改为自动优化。",
     };
-  // 同一次生成内复用相同和弦与转位的候选；锚点和设置变化后重新生成。
+  // 同一次生成内复用相同和弦与最高音的候选；锚点和设置变化后重新生成。
   const cache = new Map<string, { voices: Voicing[]; costs: number[] }>();
   const data = chords.map((c) => {
     const tone = anchor?.chordId === c.id ? anchor.tone : undefined;
@@ -487,7 +519,7 @@ export function generate(
   if (empty >= 0)
     return {
       voices: [],
-      error: `第 ${empty + 1} 个和弦 ${chordName(chords[empty])}${anchor?.chordId === chords[empty].id ? " 的指定右手转位" : ""} 没有符合条件的排列。请扩大音区、双手跨度或单手音数上限，或更换预设${anchor?.chordId === chords[empty].id ? "、修改转位；自动轮换不会跳过此转位" : ""}。`,
+      error: `第 ${empty + 1} 个和弦 ${chordName(chords[empty])}${anchor?.chordId === chords[empty].id ? " 的指定最高音" : ""} 没有符合条件的排列。请扩大音区、双手跨度或单手音数上限，或更换预设${anchor?.chordId === chords[empty].id ? "、修改最高音；自动轮换不会跳过此音" : ""}。`,
     };
   let costs = data[0].costs;
   const back: number[][] = [layers[0].map(() => -1)];
@@ -569,4 +601,3 @@ export function spelling(midi: number, c: Chord, bass = false) {
 export function voicingSpelling(midi: number, c: Chord, voice: Voicing) {
   return spelling(midi, c, voice.left.includes(midi) && mod(midi) === mod(voice.bass));
 }
-

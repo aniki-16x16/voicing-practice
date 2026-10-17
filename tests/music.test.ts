@@ -7,8 +7,8 @@ import {
   chordParts,
   degree,
   generate,
-  nextInversion,
-  inversionOptions,
+  nextTopNote,
+  topNoteOptions,
   mod,
   pc,
   qualities,
@@ -22,45 +22,61 @@ import {
 } from "../src/music.ts";
 import type { Chord, Settings } from "../src/music.ts";
 
-test("a middle chord anchor is a hard constraint for every inversion and leaves left bass alone", () => {
+test("a middle chord anchor fixes the top note and leaves left bass alone", () => {
   for (const preset of ["basic", "shell"] as const)
     for (const tone of selectedIntervals(chords[1], preset)) {
       const options = { ...settings, preset };
       const anchor = { chordId: 2, tone, rotate: false };
       const r = generate(chords, options, anchor);
       assert.equal(r.error, undefined);
-      assert.equal(mod(r.voices[1].right[0]), mod(pc("G") + tone));
+      assert.equal(mod(r.voices[1].right.at(-1)!), mod(pc("G") + tone));
       assert.equal(r.voices[1].bass, 43);
       assert.deepEqual(r, generate(chords, options, anchor));
     }
 });
 test("changing the single anchor replaces its target, and clearing restores free generation", () => {
   const r = generate(chords, settings, { chordId: 3, tone: 7, rotate: false });
-  assert.equal(mod(r.voices[2].right[0]), 7);
+  assert.equal(mod(r.voices[2].right.at(-1)!), 7);
   assert.deepEqual(generate(chords, settings, null), generate(chords, settings));
 });
-test("rotation covers every selected tone, wraps, and never skips an impossible inversion", () => {
+test("rotation covers every selected top tone, wraps, and never skips an impossible tone", () => {
   const chord = { id: 1, root: "C", quality: "M" };
   const options = { ...settings, low: 60, high: 67 };
-  let a = { chordId: 1, tone: 0, rotate: true };
+  let a = { chordId: 1, tone: 7, rotate: true };
   assert.equal(generate([chord], options, a).error, undefined);
-  a = nextInversion(a, [chord], options)!;
-  assert.equal(a.tone, 4);
-  assert.match(generate([chord], options, a).error!, /指定右手转位/);
-  a = nextInversion(a, [chord], options)!;
-  assert.equal(a.tone, 7);
-  a = nextInversion(a, [chord], options)!;
+  a = nextTopNote(a, [chord], options)!;
   assert.equal(a.tone, 0);
-  assert.equal(nextInversion({ ...a, rotate: false }, [chord], options)?.tone, 0);
-  assert.equal(nextInversion(a, [], options), null);
+  assert.match(generate([chord], options, a).error!, /指定最高音/);
+  a = nextTopNote(a, [chord], options)!;
+  assert.equal(a.tone, 4);
+  a = nextTopNote(a, [chord], options)!;
+  assert.equal(a.tone, 7);
+  assert.equal(nextTopNote({ ...a, rotate: false }, [chord], options)?.tone, 7);
+  assert.equal(nextTopNote(a, [], options), null);
 });
 test("removed tones report an error rather than silently changing the constraint", () => {
   const a = { chordId: 2, tone: 7, rotate: true };
   const options = { ...settings, preset: "shell" as const };
   assert.match(generate(chords, options, a).error!, /重新选择/);
-  assert.deepEqual(nextInversion(a, chords, options), a);
-  assert.equal(inversionOptions(chords[1], "basic")[1].name, "第一转位");
-  assert.equal(inversionOptions(chords[1], "shell")[1].name, "最低音 B");
+  assert.deepEqual(nextTopNote(a, chords, options), a);
+  assert.equal(topNoteOptions(chords[1], { preset: "basic" })[1].label, "3 音");
+  assert.equal(topNoteOptions(chords[1], { preset: "shell" })[2].label, "7 音");
+});
+
+test("top note labels show only chord tone numbers, including extensions", () => {
+  const labels = (quality: string, extras?: string[]) =>
+    topNoteOptions({ id: 1, root: "C", quality, extras }, { preset: "basic" }).map((o) => o.label);
+  assert.deepEqual(labels("m7"), ["1 音", "3 音", "5 音", "7 音"]);
+  assert.deepEqual(labels("dim7"), ["1 音", "3 音", "5 音", "7 音"]);
+  assert.deepEqual(labels("7", ["#9", "#11", "b13"]), [
+    "1 音",
+    "3 音",
+    "5 音",
+    "7 音",
+    "9 音",
+    "11 音",
+    "13 音",
+  ]);
 });
 const settings: Settings = {
   preset: "basic",

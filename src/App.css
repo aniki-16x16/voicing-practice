@@ -232,17 +232,17 @@
   text-overflow: ellipsis;
   color: #819071;
 }
-.beat.inversion-set {
+.beat.top-note-set {
   background: #e8e3f2;
   border-radius: 6px;
 }
-.beat.inversion-set:hover {
+.beat.top-note-set:hover {
   background: #dfd7ed;
 }
-.beat.inversion-set strong {
+.beat.top-note-set strong {
   color: #66527e;
 }
-.beat.inversion-set + .chord-name {
+.beat.top-note-set + .chord-name {
   color: #887399;
 }
 .beat[data-delete-ready="true"] {
@@ -982,14 +982,14 @@
     width: 28px;
   }
 }
-.inversion-settings {
+.top-note-settings {
   display: flex;
   flex-direction: column;
   gap: 12px;
   padding-top: 15px;
   border-top: 1px solid #dbe3d0;
 }
-.inversion-settings .hint {
+.top-note-settings .hint {
   font-size: 10px;
 }
 .clear-anchor {
@@ -1091,14 +1091,14 @@
   border: 0;
   text-align: left;
 }
-fieldset.inversion-settings,
+fieldset.top-note-settings,
 fieldset.hand-range {
   margin: 0;
   padding: 0;
   border: 0;
   min-width: 0;
 }
-fieldset.inversion-settings {
+fieldset.top-note-settings {
   padding-top: 15px;
   border-top: 1px solid #dbe3d0;
 }
