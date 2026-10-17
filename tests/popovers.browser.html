@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="zh-CN">
+  <meta charset="utf-8" />
+  <title>Popover interaction checks</title>
+  <div id="root"></div>
+  <button id="outside">Outside</button>
+  <pre id="result">Running…</pre>
+  <script type="module">
+    import { createElement, useState } from "react";
+    import { createRoot } from "react-dom/client";
+    import { flushSync } from "react-dom";
+    import { VoicingSelect } from "../src/VoicingSelect.tsx";
+    import { PlaybackTempo } from "../src/PlaybackTempo.tsx";
+    import { restoreGlobalSettings, minimumTempo, maximumTempo } from "../src/settings.ts";
+
+    const checks = [];
+    const assert = (condition, name) => {
+      checks.push({ name, passed: !!condition });
+      if (!condition) throw new Error(name);
+    };
+    const settle = () => new Promise(requestAnimationFrame);
+    let settings = { ...restoreGlobalSettings().settings, soloLeft: false };
+    let tempo = 120;
+    function Harness() {
+      const [value, setValue] = useState(settings);
+      const [speed, setSpeed] = useState(tempo);
+      return createElement(
+        "div",
+        null,
+        createElement(VoicingSelect, {
+          settings: value,
+          onChange: (patch) => {
+            settings = { ...settings, ...patch };
+            setValue(settings);
+          },
+        }),
+        createElement(PlaybackTempo, {
+          value: speed,
+          onChange: (next) => {
+            tempo = next;
+            setSpeed(next);
+          },
+        }),
+      );
+    }
+    const click = async (element) => {
+      element.click();
+      await settle();
+    };
+    // Reproduce touch browsers that blur the focused control without focusing the tapped button.
+    const touchClick = async (button) => {
+      button.dispatchEvent(
+        new PointerEvent("pointerdown", { bubbles: true, pointerType: "touch" }),
+      );
+      document.activeElement.blur();
+      await settle();
+      assert(button.isConnected, "touch blur does not remove the control before click");
+      button.dispatchEvent(new PointerEvent("pointerup", { bubbles: true, pointerType: "touch" }));
+      await click(button);
+    };
+    const outside = document.querySelector("#outside");
+    const isOpen = (name) => !!document.querySelector(`[role="dialog"][aria-label="${name}"]`);
+    const root = createRoot(document.querySelector("#root"));
+    try {
+      flushSync(() => root.render(createElement(Harness)));
+      const voicing = document.querySelector(".voicing-controls .select-trigger");
+      const playback = document.querySelector(".tempo-display");
+      for (const hand of ["left", "right"]) {
+        if (!isOpen("左右手配音")) await click(voicing);
+        await touchClick(document.querySelector(`button[data-hand="${hand}"]`));
+        for (const value of hand === "left" ? ["shell", "free", "root"] : ["shell", "free"]) {
+          document.querySelector(`button[data-hand="${hand}"]`).focus();
+          const option = [...document.querySelectorAll(".hand-options button")].find((button) =>
+            button.textContent.includes({ root: "根音", shell: "Shell", free: "自由配音" }[value]),
+          );
+          await touchClick(option);
+          assert(option.getAttribute("aria-pressed") === "true", `${hand} ${value} is selected`);
+          assert(isOpen("左右手配音"), "voicing stays open after selection");
+          assert(
+            hand === "left"
+              ? settings.leftMode === value
+              : settings.preset === (value === "shell" ? "shell" : "right-rich"),
+            "voicing selection updates settings",
+          );
+        }
+      }
+      outside.focus();
+      await settle();
+      assert(!isOpen("左右手配音"), "voicing closes when focus moves outside");
+      await click(playback);
+      for (const label of ["提高播放速度", "提高播放速度", "降低播放速度"]) {
+        document.querySelector('input[type="range"]').focus();
+        const previous = tempo;
+        await touchClick(document.querySelector(`button[aria-label="${label}"]`));
+        assert(
+          tempo === previous + (label.startsWith("提高") ? 1 : -1),
+          "tempo changes once per tap",
+        );
+        assert(isOpen("调整播放速度"), "tempo stays open after adjustment");
+      }
+      const range = document.querySelector('input[type="range"]');
+      for (const limit of [minimumTempo, maximumTempo]) {
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(
+          range,
+          String(limit),
+        );
+        range.dispatchEvent(new Event("input", { bubbles: true }));
+        await settle();
+        assert(tempo === limit && isOpen("调整播放速度"), "range works at tempo limit");
+        assert(
+          document.querySelector(
+            `button[aria-label="${limit === minimumTempo ? "降低" : "提高"}播放速度"]`,
+          ).disabled,
+          "tempo limit disables adjustment",
+        );
+      }
+      for (const [trigger, name] of [
+        [voicing, "左右手配音"],
+        [playback, "调整播放速度"],
+      ]) {
+        if (!isOpen(name)) await click(trigger);
+        outside.dispatchEvent(
+          new PointerEvent("pointerdown", { bubbles: true, pointerType: "touch" }),
+        );
+        await settle();
+        assert(!isOpen(name), `${name} closes on outside touch`);
+        await click(trigger);
+        document.activeElement.dispatchEvent(
+          new KeyboardEvent("keydown", { key: "Escape", bubbles: true }),
+        );
+        await settle();
+        assert(
+          !isOpen(name) && document.activeElement === trigger,
+          `${name} Escape closes and restores focus`,
+        );
+        await click(trigger);
+        outside.focus();
+        await settle();
+        assert(!isOpen(name), `${name} closes when keyboard focus leaves`);
+      }
+      document.querySelector("#result").textContent = JSON.stringify(
+        { passed: true, checks },
+        null,
+        2,
+      );
+    } catch (error) {
+      document.querySelector("#result").textContent = JSON.stringify(
+        { passed: false, error: String(error), checks },
+        null,
+        2,
+      );
+    } finally {
+      root.unmount();
+    }
+  </script>
+</html>

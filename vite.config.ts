@@ -5,4 +5,7 @@ import { defineConfig } from "vite";
 export default defineConfig(({ mode }) => ({
   base: mode === "production" ? "/voicing-practice/" : "/",
   plugins: [react()],
+  server: {
+    host: "0.0.0.0",
+  },
 }));

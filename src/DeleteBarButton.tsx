@@ -123,7 +123,7 @@ export function DeleteBarButton({ empty, onDelete }: { empty: boolean; onDelete:
       />
       <span className="delete-bar-label">
         <Trash2 size={15} />
-        {empty ? "删除小节" : "长按删除"}
+        删除小节
       </span>
     </button>
   );

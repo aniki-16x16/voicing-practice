@@ -25,7 +25,7 @@ export function VoicingSelect({
     menu.current
       ?.querySelector<HTMLButtonElement>('[role="radio"][aria-checked="true"]')
       ?.focus({ preventScroll: true });
-    const outside = (event: PointerEvent) => {
+    const outside = (event: Event) => {
       if (!root.current?.contains(event.target as Node)) setOpen(false);
     };
     const close = () => setOpen(false);
@@ -34,10 +34,13 @@ export function VoicingSelect({
         close();
     };
     document.addEventListener("pointerdown", outside);
+    // Touch browsers can blur to no element when tapping inside; close only on actual outside focus.
+    document.addEventListener("focusin", outside);
     document.addEventListener("scroll", scroll, true);
     window.addEventListener("resize", close);
     return () => {
       document.removeEventListener("pointerdown", outside);
+      document.removeEventListener("focusin", outside);
       document.removeEventListener("scroll", scroll, true);
       window.removeEventListener("resize", close);
     };
@@ -46,9 +49,6 @@ export function VoicingSelect({
     <div
       className="voicing-controls"
       ref={root}
-      onBlur={(event) => {
-        if (!root.current?.contains(event.relatedTarget)) setOpen(false);
-      }}
       onKeyDown={(event) => {
         if (event.key === "Escape" && open) {
           event.preventDefault();

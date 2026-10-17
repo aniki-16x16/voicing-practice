@@ -15,20 +15,22 @@ export function PlaybackTempo({
   useEffect(() => {
     if (!open) return;
     root.current?.querySelector<HTMLInputElement>('input[type="range"]')?.focus();
-    const outside = (event: PointerEvent) => {
+    const outside = (event: Event) => {
       if (!root.current?.contains(event.target as Node)) setOpen(false);
     };
     document.addEventListener("pointerdown", outside);
-    return () => document.removeEventListener("pointerdown", outside);
+    // Touch browsers can blur to no element when tapping inside; close only on actual outside focus.
+    document.addEventListener("focusin", outside);
+    return () => {
+      document.removeEventListener("pointerdown", outside);
+      document.removeEventListener("focusin", outside);
+    };
   }, [open]);
   return (
     <div
       ref={root}
       className="playback-tempo"
       data-tempo-control
-      onBlur={(event) => {
-        if (!event.currentTarget.contains(event.relatedTarget)) setOpen(false);
-      }}
       onKeyDown={(event) => {
         if (event.key === "Escape" && open) {
           event.preventDefault();
