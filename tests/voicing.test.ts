@@ -311,3 +311,56 @@ test("solo left preserves explicit slash bass and reports unavailable or impossi
   assert.match(generate([c], { ...settings, span: 5 }, anchor).error!, /指定最高音/);
   assert.equal(generate([c], settings).error, undefined);
 });
+
+test("solo left enumerates open Shells and connects Dm7 to G7 within a tenth", () => {
+  const progression = [
+    { id: 1, root: "D", quality: "m7" },
+    { id: 2, root: "G", quality: "7" },
+  ];
+  const settings: Settings = { ...defaults, soloLeft: true, span: 16 };
+  const open = [43, 53, 59]; // G2–F3–B3
+  assert.ok(candidates(progression[1], settings).some((v) => v.left.join() === open.join()));
+  const result = generate(progression, settings);
+  assert.equal(result.error, undefined);
+  assert.deepEqual(
+    result.voices.map((v) => v.left),
+    [[50, 53, 60], open],
+  );
+  assert.ok(result.voices.every((v) => v.right.length === 0));
+
+  for (const span of [12, 14]) {
+    const narrower = { ...settings, span };
+    assert.ok(!candidates(progression[1], narrower).some((v) => v.left.join() === open.join()));
+    assert.ok(
+      candidates(progression[1], narrower).every((v) => v.left.at(-1)! - v.left[0] <= span),
+    );
+  }
+  const anchored = generate(progression, settings, { chordId: 2, tone: 4, rotate: false });
+  assert.equal(anchored.error, undefined);
+  assert.deepEqual(anchored.voices[1].left, open);
+});
+
+test("solo left open Shell candidates preserve bass, pitch classes, count and span", () => {
+  for (const root of roots)
+    for (const quality of ["M", "7", "m7", "dim7", "m7b5", "7(#5,b9)"])
+      for (const span of [12, 14, 16]) {
+        const c = { id: 1, root, quality };
+        const settings: Settings = { ...defaults, soloLeft: true, span };
+        const voices = candidates(c, settings);
+        assert.ok(voices.length > 0);
+        const bass = 36 + pc(root);
+        const expectedBass = bass < 43 ? bass + 12 : bass;
+        const expectedPitches = topNoteOptions(c, settings)
+          .map((o) => mod(pc(root) + o.tone))
+          .sort((a, b) => a - b);
+        for (const v of voices) {
+          assert.equal(v.bass, expectedBass);
+          assert.equal(v.left[0], expectedBass);
+          assert.deepEqual(classes(v.left), expectedPitches);
+          assert.equal(v.left.length, expectedPitches.length);
+          assert.ok(v.left.length <= settings.handLimit);
+          assert.ok(v.left.at(-1)! - v.left[0] <= span);
+          assert.deepEqual(v.right, []);
+        }
+      }
+});

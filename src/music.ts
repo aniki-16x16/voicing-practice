@@ -303,7 +303,7 @@ export function voicingCost(c: Chord, v: Voicing, settings: Settings) {
 /** 低音固定；低八度只加纯五度，上方才开放其他音，避免密集低音。 */
 function leftCandidates(c: Chord, settings: Settings): number[][] {
   const bass = 36 + pc(c.bass || c.root);
-  if (settings.soloLeft || settings.leftMode === "shell") {
+  if (settings.leftMode === "shell") {
     // Shell 放在较清晰的中低音区；保留指定低音，骨架音在一个手跨度内排列。
     const shellBass = bass < 43 ? bass + 12 : bass;
     const tones = selectedIntervals(c, "shell").map((tone) => mod(pc(c.root) + tone));
@@ -349,32 +349,38 @@ function leftCandidates(c: Chord, settings: Settings): number[][] {
   return result;
 }
 
-/** 单练左手按最高音排列 Shell；指定斜杠低音时仍保留该低音。 */
+/** 枚举跨度内各骨架音的八度位置，包含 1–7–3 等开放 Shell。 */
 function soloLeftCandidates(c: Chord, settings: Settings, topTone?: number): Voicing[] {
-  if (topTone === undefined)
-    return leftCandidates(c, settings).map((left) => ({ bass: left[0], left, right: [] }));
   const pitches = topNoteIntervals(c, settings).map((tone) => mod(pc(c.root) + tone));
   const bass = 36 + pc(c.bass || c.root);
   const shellBass = bass < 43 ? bass + 12 : bass;
-  const result: Voicing[] = [];
-  for (let top = 43; top <= 65; top++) {
-    if (mod(top) !== mod(pc(c.root) + topTone)) continue;
-    const notes = pitches
-      .filter((pitch) => !c.bass || pitch !== mod(shellBass) || pitch === mod(top))
-      .map((pitch) => top - mod(top - pitch));
-    if (c.bass) notes.push(shellBass);
-    const left = [...new Set(notes)].sort((a, b) => a - b);
-    if (
-      left[0] < 43 ||
-      (c.bass && left[0] !== shellBass) ||
-      left.at(-1) !== top ||
-      left.length > settings.handLimit ||
-      top - left[0] > settings.span
-    )
-      continue;
-    result.push({ bass: left[0], left, right: [] });
-  }
-  return result;
+  const topPitch = topTone === undefined ? undefined : mod(pc(c.root) + topTone);
+  const collect = (basses: number[]) => {
+    const result: Voicing[] = [];
+    for (const bass of basses) {
+      const remaining = pitches.filter(
+        (pitch) => pitch !== mod(bass) || (c.bass && pitch === topPitch),
+      );
+      if (remaining.length + 1 > settings.handLimit) continue;
+      const walk = (notes: number[], index: number) => {
+        if (index === remaining.length) {
+          const left = [...notes].sort((a, b) => a - b);
+          if (topPitch === undefined || mod(left.at(-1)!) === topPitch)
+            result.push({ bass, left, right: [] });
+          return;
+        }
+        const first = bass + 1 + mod(remaining[index] - bass - 1);
+        for (let note = first; note <= bass + settings.span; note += 12)
+          walk([...notes, note], index + 1);
+      };
+      walk([bass], 0);
+    }
+    return result;
+  };
+  // 自动模式保留根音/指定低音；最高音约束需要转位时才调整最低音。
+  const rooted = collect([shellBass]);
+  if (rooted.length || topPitch === undefined || c.bass) return rooted;
+  return collect(pitches.map((pitch) => 43 + mod(pitch - 43)).filter((note) => note !== shellBass));
 }
 
 export function candidates(c: Chord, settings: Settings, topTone?: number): Voicing[] {

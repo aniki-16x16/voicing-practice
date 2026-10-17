@@ -298,13 +298,13 @@ function App() {
     const next = beats.map((c, i) =>
       i === current
         ? {
-            ...(c || {
-              ...chord,
-              id: Math.max(0, ...events.chords.map((x) => x.id)) + 1,
-              reference: undefined,
-            }),
-            ...chordPatch,
-          }
+          ...(c || {
+            ...chord,
+            id: Math.max(0, ...events.chords.map((x) => x.id)) + 1,
+            reference: undefined,
+          }),
+          ...chordPatch,
+        }
         : c,
     );
     commitBeats(
@@ -330,11 +330,11 @@ function App() {
           topNoteOptions(chord, settings).some((option) => option.tone === anchor.tone)
           ? anchor.tone
           : (topNoteOptions(chord, settings).find(
-              (option) =>
-                voice &&
-                mod(option.tone) ===
-                  mod((settings.soloLeft ? voice.left : voice.right).at(-1)! - pc(chord.root)),
-            )?.tone ?? topNoteOptions(chord, settings)[0].tone)
+            (option) =>
+              voice &&
+              mod(option.tone) ===
+              mod((settings.soloLeft ? voice.left : voice.right).at(-1)! - pc(chord.root)),
+          )?.tone ?? topNoteOptions(chord, settings)[0].tone)
         : Number(value);
     setAnchor({
       chordId: id,
@@ -381,7 +381,7 @@ function App() {
   const anchorName =
     anchor && anchorChord
       ? topNoteOptions(anchorChord, settings).find((o) => o.tone === anchor.tone)?.name ||
-        "需重选最高音"
+      "需重选最高音"
       : "";
   const isAnchor = !!beats[current] && anchor?.chordId === beats[current]?.id;
   const markers = useMemo(() => referenceMarkers(beats), [beats]);
@@ -684,7 +684,7 @@ function App() {
                         label: o.label,
                       })),
                       ...(isAnchor &&
-                      !topNoteOptions(chord, settings).some((o) => o.tone === anchor!.tone)
+                        !topNoteOptions(chord, settings).some((o) => o.tone === anchor!.tone)
                         ? [{ value: String(anchor!.tone), label: "原最高音不可用，请重选" }]
                         : []),
                     ]}
@@ -750,12 +750,12 @@ function App() {
                   />
                 </fieldset>
                 <Select
-                  label="双手最大跨度"
+                  label="单手最大跨度"
                   value={String(settings.span)}
                   options={[
-                    { value: "12", label: "八度 · 12 半音" },
-                    { value: "14", label: "九度 · 14 半音" },
-                    { value: "16", label: "十度 · 16 半音" },
+                    { value: "12", label: "八度" },
+                    { value: "14", label: "九度" },
+                    { value: "16", label: "十度" },
                   ]}
                   onChange={(span) => configure({ span: Number(span) })}
                 />
