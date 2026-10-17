@@ -14,8 +14,7 @@ import {
   Repeat,
 } from "lucide-react";
 import { DragScroll } from "./DragScroll";
-import { ChordAudio, defaultHumanization } from "./audio";
-import type { HumanizationSettings } from "./audio";
+import { ChordAudio } from "./audio";
 import {
   chordName,
   chordParts,
@@ -28,7 +27,6 @@ import {
   nextTopNotes,
   mod,
   noteName,
-  qualities,
   referenceAt,
   references,
   pc,
@@ -43,13 +41,19 @@ import {
   removeChordAt,
   removeBarAt,
   changeReference,
-  restoreTopNotes,
 } from "./practice";
 import type { Beat } from "./practice";
 import { VoicingSelect } from "./VoicingSelect";
 import { Select } from "./Select";
 import { DegreeSelect } from "./DegreeSelect";
-import { TempoControl } from "./TempoControl";
+import { TempoSlider } from "./TempoSlider";
+import { PlaybackTempo } from "./PlaybackTempo";
+import {
+  restoreSavedSettings,
+  saveSettings,
+  globalSettingsKey,
+  chordSettingsKey,
+} from "./settings";
 import { Slider } from "./Slider";
 import { Switch } from "./Switch";
 import { DeleteBarButton } from "./DeleteBarButton";
@@ -57,86 +61,9 @@ import { Staff } from "./Staff";
 import Keyboard from "./Keyboard";
 import "./App.css";
 
-const initial: Beat[] = [
-  { id: 1, root: "D", quality: "m7", reference: "C" },
-  null,
-  null,
-  null,
-  { id: 2, root: "G", quality: "7" },
-  null,
-  null,
-  null,
-  { id: 3, root: "C", quality: "M7" },
-  null,
-  null,
-  null,
-  { id: 4, root: "A", quality: "m7" },
-  null,
-  null,
-  null,
-];
-const defaults: Settings = {
-  preset: "shell",
-  leftMode: "root",
-  soloLeft: false,
-  movement: "smooth",
-  low: 48,
-  high: 77,
-  span: 12,
-  handLimit: 4,
-};
 const emptyChord: Chord = { id: 0, root: "C", quality: "M" };
-const validPitch = (note: string) => /^[A-G](?:#+|b+)?$/.test(note);
-const validChord = (c: Chord) =>
-  c &&
-  validPitch(c.root) &&
-  Object.hasOwn(qualities, c.quality) &&
-  (c.extras === undefined ||
-    (Array.isArray(c.extras) &&
-      c.extras.every((extra) => extraOptions.some((option) => option.value === extra)))) &&
-  (!c.reference || references.includes(c.reference)) &&
-  (!c.bass || validPitch(c.bass));
-function restore(): Beat[] {
-  try {
-    const saved = JSON.parse(localStorage.getItem("voicing-practice-v2") || "null");
-    if (
-      Array.isArray(saved) &&
-      saved.length <= 128 &&
-      saved.length % 4 === 0 &&
-      saved.every((c) => c === null || validChord(c))
-    )
-      return saved;
-    const old = JSON.parse(localStorage.getItem("voicing-practice-v1") || "null");
-    if (old?.chords?.length > 0 && old.chords.length <= 32 && old.chords.every(validChord))
-      return old.chords.flatMap((c: Chord) => [c, null, null, null]);
-  } catch {
-    /* Local storage is optional. */
-  }
-  return initial;
-}
 const noteOptions = (notes: number[]) =>
   notes.map((n) => ({ value: String(n), label: noteName(n) }));
-function restoreHumanization(): HumanizationSettings {
-  try {
-    const saved = JSON.parse(localStorage.getItem("voicing-humanization-v1") || "null");
-    if (saved && typeof saved === "object") {
-      return {
-        enabled: typeof saved.enabled === "boolean" ? saved.enabled : defaultHumanization.enabled,
-        timingMs:
-          typeof saved.timingMs === "number" && Number.isFinite(saved.timingMs)
-            ? Math.round(Math.max(0, Math.min(60, saved.timingMs)))
-            : defaultHumanization.timingMs,
-        volumePercent:
-          typeof saved.volumePercent === "number" && Number.isFinite(saved.volumePercent)
-            ? Math.round(Math.max(0, Math.min(20, saved.volumePercent)))
-            : defaultHumanization.volumePercent,
-      };
-    }
-  } catch {
-    /* Local storage is optional. */
-  }
-  return { ...defaultHumanization };
-}
 function Drawer({
   children,
   title,
@@ -182,27 +109,16 @@ function Drawer({
   );
 }
 function App() {
-  const [beats, setBeats] = useState<Beat[]>(restore),
-    [settings, setSettings] = useState(defaults),
-    [humanization, setHumanization] = useState(restoreHumanization),
+  const [saved] = useState(restoreSavedSettings);
+  const [beats, setBeats] = useState<Beat[]>(saved.chords.beats),
+    [settings, setSettings] = useState(saved.global.settings),
+    [humanization, setHumanization] = useState(saved.global.humanization),
     [current, setCurrent] = useState(0);
-  const [anchors, setAnchors] = useState<TopNoteAnchor[]>(() => {
-    try {
-      const saved = JSON.parse(
-        localStorage.getItem("voicing-top-notes-v2") ??
-          localStorage.getItem("voicing-top-note-v1") ??
-          "null",
-      );
-      return restoreTopNotes(saved, beats);
-    } catch {
-      /* optional */
-    }
-    return [];
-  });
+  const [anchors, setAnchors] = useState<TopNoteAnchor[]>(saved.chords.anchors);
   const [drawer, setDrawer] = useState<"chord" | "practice" | null>(null),
-    [tempo, setTempo] = useState(76),
+    [tempo, setTempo] = useState(saved.global.tempo),
     [playing, setPlaying] = useState(false),
-    [loop, setLoop] = useState(true),
+    [loop, setLoop] = useState(saved.global.loop),
     [error, setError] = useState(""),
     [cycle, setCycle] = useState(0);
   const audio = useRef<AudioContext | null>(null),
@@ -218,26 +134,11 @@ function App() {
     reference = referenceAt(events.chords, index);
   const chordSettings = chordParts(chord);
   useEffect(() => {
-    try {
-      localStorage.setItem("voicing-practice-v2", JSON.stringify(beats));
-    } catch {
-      /* optional */
-    }
-  }, [beats]);
+    saveSettings(chordSettingsKey, { beats, anchors });
+  }, [beats, anchors]);
   useEffect(() => {
-    try {
-      localStorage.setItem("voicing-top-notes-v2", JSON.stringify(anchors));
-    } catch {
-      /* optional */
-    }
-  }, [anchors]);
-  useEffect(() => {
-    try {
-      localStorage.setItem("voicing-humanization-v1", JSON.stringify(humanization));
-    } catch {
-      /* Local storage is optional. */
-    }
-  }, [humanization]);
+    saveSettings(globalSettingsKey, { settings, tempo, loop, humanization });
+  }, [settings, tempo, loop, humanization]);
   const commitBeats = (next: Beat[]) => {
     setAnchors((previous) =>
       previous.filter((anchor) => next.some((c) => c?.id === anchor.chordId)),
@@ -411,7 +312,7 @@ function App() {
         drawer ||
         (event.target instanceof Element &&
           event.target.closest(
-            'input, textarea, select, [contenteditable]:not([contenteditable="false"]), [role="combobox"]',
+            'input, textarea, select, [contenteditable]:not([contenteditable="false"]), [role="combobox"], [data-tempo-control]',
           ))
       )
         return;
@@ -615,9 +516,7 @@ function App() {
           >
             <Repeat size={19} />
           </button>
-          <div className="playback-tempo">
-            <TempoControl value={tempo} onChange={setTempo} />
-          </div>
+          <PlaybackTempo value={tempo} onChange={setTempo} />
         </div>
         {error && (
           <p className="audio-error" role="alert">
@@ -803,17 +702,9 @@ function App() {
                   ]}
                   onChange={(span) => configure({ span: Number(span) })}
                 />
-                <p className="hint">
-                  音数与跨度分别限制每只手，左手低音也计入；音区和低音清晰度会共同影响选音。
-                </p>
-                <div className="tempo-control">
-                  <span>播放速度</span>
-                  <TempoControl value={tempo} onChange={setTempo} />
-                  <p className="hint">点击加减微调，或直接输入；按住 Shift 每次调整 5 BPM。</p>
-                </div>
+                <TempoSlider value={tempo} onChange={setTempo} />
                 <section className="humanization-settings" aria-label="人性化设置">
                   <h3>人性化</h3>
-                  <p className="hint">每次播放和试听时，重新随机分配各声部的起音与音量。</p>
                   <div className="humanization-toggle">
                     <span>人性化开关</span>
                     <Switch

@@ -15,7 +15,7 @@ import {
 import { degree, generate, pc } from "../src/music.ts";
 import type { Beat } from "../src/practice.ts";
 
-test("saved top notes migrate, retain only surviving chords, and keep one setting per chord", () => {
+test("saved top notes retain only surviving chords and keep one setting per chord", () => {
   const beats: Beat[] = [
     { id: 1, root: "C", quality: "M" },
     null,
@@ -24,7 +24,6 @@ test("saved top notes migrate, retain only surviving chords, and keep one settin
   ];
   const first = { chordId: 1, tone: 4, rotate: false };
   const second = { chordId: 2, tone: 10, rotate: true };
-  assert.deepEqual(restoreTopNotes(first, beats), [first]);
   assert.deepEqual(restoreTopNotes([first, second], beats), [first, second]);
   assert.deepEqual(restoreTopNotes([first, second], beats.slice(2)), [second]);
   assert.deepEqual(
@@ -42,7 +41,7 @@ test("saved top notes migrate, retain only surviving chords, and keep one settin
     ),
     [{ ...first, tone: 0 }, second],
   );
-  for (const saved of [null, [], {}, "invalid"])
+  for (const saved of [null, [], {}, first, "invalid"])
     assert.deepEqual(restoreTopNotes(saved, beats), []);
 });
 

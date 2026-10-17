@@ -2,9 +2,9 @@ import type { Chord, TopNoteAnchor } from "./music";
 import { transposeDegree } from "./music.ts";
 
 export type Beat = Chord | null;
-/** Accept the previous single selection as well as independent per-chord selections. */
+/** Restore valid top-note selections for the surviving chords. */
 export function restoreTopNotes(saved: unknown, beats: Beat[]): TopNoteAnchor[] {
-  const entries = Array.isArray(saved) ? saved : saved ? [saved] : [];
+  const entries = Array.isArray(saved) ? saved : [];
   const anchors = new Map<number, TopNoteAnchor>();
   for (const entry of entries) {
     if (

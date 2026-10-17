@@ -34,6 +34,31 @@
     #dfe5d5 var(--slider-progress)
   );
 }
+.slider-track-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.slider-track-row .slider-input {
+  min-width: 0;
+  flex: 1;
+}
+.slider-adjust {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 1px solid #d4dfca;
+  border-radius: 7px;
+  background: #fffef9;
+  color: #527456;
+}
+.slider-adjust:enabled:hover {
+  background: #e9efdf;
+}
 .slider-input::-webkit-slider-runnable-track {
   height: 5px;
   border-radius: 5px;
