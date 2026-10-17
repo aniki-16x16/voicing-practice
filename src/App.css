@@ -441,7 +441,7 @@
   gap: 7px;
 }
 .play:hover {
-  background: #30533e;
+  background: var(--action-hover);
 }
 .transport .play {
   width: 44px;
@@ -610,10 +610,12 @@
   font-size: 13px;
   cursor: pointer;
 }
-.select-option.focused {
+.select-option.focused,
+.hand-options .select-option:hover {
   background: #eef2e6;
 }
-.select-option[aria-selected="true"] {
+.select-option[aria-selected="true"],
+.hand-options .select-option[aria-pressed="true"] {
   color: #37613e;
   font-weight: 600;
   background: #e3ecd9;
@@ -725,13 +727,17 @@
   font-size: 13px;
   color: #849276;
 }
+:root {
+  --action-color: #3d644d;
+  --action-hover: #30533e;
+}
 .primary {
-  background: #3d644d;
-  border-color: #3d644d;
+  background: var(--action-color);
+  border-color: var(--action-color);
   color: #fff;
 }
 .primary:hover {
-  background: #30533e;
+  background: var(--action-hover);
 }
 .tempo-control {
   font-size: 12px;
@@ -993,4 +999,110 @@
 }
 .drawer-content > .select-field {
   flex: none;
+}
+
+.voicing-controls {
+  display: flex;
+  align-items: end;
+  gap: 14px;
+  flex-shrink: 0;
+}
+.voicing-controls .select-field {
+  flex: 1;
+  min-width: 0;
+}
+.voicing-controls .select-trigger {
+  min-height: 52px;
+  gap: 8px;
+}
+.voicing-controls .select-trigger > svg {
+  flex-shrink: 0;
+}
+.solo-left-control {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-height: 52px;
+  padding: 0 2px;
+  cursor: pointer;
+  white-space: nowrap;
+  font-size: 13px;
+  font-weight: 500;
+  touch-action: manipulation;
+  user-select: none;
+}
+.solo-left-control input {
+  width: 26px;
+  height: 26px;
+  margin: 0;
+  accent-color: #365442;
+  cursor: pointer;
+}
+.voicing-menu {
+  max-height: min(250px, calc(100dvh - 16px));
+}
+.hand-tabs {
+  position: relative;
+  display: flex;
+  padding: 4px;
+  margin-bottom: 4px;
+  background: #edf0e7;
+  border-radius: 9px;
+  isolation: isolate;
+}
+.hand-slider {
+  position: absolute;
+  top: 4px;
+  bottom: 4px;
+  left: 4px;
+  width: calc((100% - 8px) / 2);
+  border-radius: 6px;
+  background: var(--action-color);
+  box-shadow: 0 2px 4px #25371c18;
+  transform: translateX(0);
+  transition: transform 220ms cubic-bezier(0.22, 0.8, 0.3, 1);
+  pointer-events: none;
+  z-index: -1;
+}
+.hand-tabs[data-hand="right"] .hand-slider {
+  transform: translateX(100%);
+}
+.hand-tabs button {
+  flex: 1;
+  min-width: 0;
+  min-height: 44px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #6b7868;
+  font-size: 13px;
+  font-weight: 600;
+  transition: color 160ms ease;
+}
+.hand-tabs button:hover {
+  color: #293d32;
+  background: transparent;
+}
+.hand-tabs button[aria-checked="true"] {
+  color: #fff;
+}
+.hand-options button {
+  width: 100%;
+  border: 0;
+  text-align: left;
+}
+fieldset.inversion-settings,
+fieldset.hand-range {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+fieldset.inversion-settings {
+  padding-top: 15px;
+  border-top: 1px solid #dbe3d0;
+}
+fieldset:disabled,
+.voicing-controls button:disabled {
+  opacity: 0.5;
 }

@@ -32,7 +32,6 @@ import {
   references,
   pc,
   voicingSpelling,
-  voicingPresets,
   omittedNotes,
 } from "./music";
 import type { Chord, Settings, Voicing, InversionAnchor } from "./music";
@@ -45,6 +44,7 @@ import {
   changeReference,
 } from "./practice";
 import type { Beat } from "./practice";
+import { VoicingSelect } from "./VoicingSelect";
 import { Select } from "./Select";
 import { DegreeSelect } from "./DegreeSelect";
 import { TempoControl } from "./TempoControl";
@@ -72,7 +72,9 @@ const initial: Beat[] = [
   null,
 ];
 const defaults: Settings = {
-  preset: "basic",
+  preset: "shell",
+  leftMode: "root",
+  soloLeft: false,
   movement: "smooth",
   low: 48,
   high: 77,
@@ -296,13 +298,13 @@ function App() {
     const next = beats.map((c, i) =>
       i === current
         ? {
-            ...(c || {
-              ...chord,
-              id: Math.max(0, ...events.chords.map((x) => x.id)) + 1,
-              reference: undefined,
-            }),
-            ...chordPatch,
-          }
+          ...(c || {
+            ...chord,
+            id: Math.max(0, ...events.chords.map((x) => x.id)) + 1,
+            reference: undefined,
+          }),
+          ...chordPatch,
+        }
         : c,
     );
     commitBeats(
@@ -328,8 +330,8 @@ function App() {
           inversionOptions(chord, settings.preset).some((option) => option.tone === anchor.tone)
           ? anchor.tone
           : (inversionOptions(chord, settings.preset).find(
-              (option) => voice && mod(option.tone) === mod(voice.right[0] - pc(chord.root)),
-            )?.tone ?? 0)
+            (option) => voice && mod(option.tone) === mod(voice.right[0] - pc(chord.root)),
+          )?.tone ?? 0)
         : Number(value);
     setAnchor({
       chordId: id,
@@ -376,7 +378,7 @@ function App() {
   const anchorName =
     anchor && anchorChord
       ? inversionOptions(anchorChord, settings.preset).find((o) => o.tone === anchor.tone)?.name ||
-        "需重选转位"
+      "需重选转位"
       : "";
   const isAnchor = !!beats[current] && anchor?.chordId === beats[current]?.id;
   const markers = useMemo(() => referenceMarkers(beats), [beats]);
@@ -667,7 +669,11 @@ function App() {
                   onChange={(reference) => edit({ reference: reference || undefined })}
                 />
                 <p className="hint">切换调性保留本段根音、低音级数，直到下一个明确的调性标记。</p>
-                <section className="inversion-settings" aria-label="右手转位设置">
+                <fieldset
+                  disabled={settings.soloLeft}
+                  className="inversion-settings"
+                  aria-label="右手转位设置"
+                >
                   <Select
                     label="右手转位"
                     value={isAnchor ? (anchor!.rotate ? "rotate" : String(anchor!.tone)) : "auto"}
@@ -679,7 +685,7 @@ function App() {
                         label: o.label,
                       })),
                       ...(isAnchor &&
-                      !inversionOptions(chord, settings.preset).some((o) => o.tone === anchor!.tone)
+                        !inversionOptions(chord, settings.preset).some((o) => o.tone === anchor!.tone)
                         ? [{ value: String(anchor!.tone), label: "原转位不可用，请重选" }]
                         : []),
                     ]}
@@ -699,7 +705,7 @@ function App() {
                       </button>
                     </p>
                   )}
-                </section>
+                </fieldset>
                 <div className="edit-preview">
                   <strong>{symbol(chord, reference)}</strong>
                   <span>{chordName(chord)}</span>
@@ -707,15 +713,7 @@ function App() {
               </>
             ) : (
               <>
-                <Select
-                  label="Voicing 预设"
-                  value={settings.preset}
-                  options={[...voicingPresets]}
-                  onChange={(preset) => configure({ preset: preset as Settings["preset"] })}
-                />
-                <p className="hint">
-                  {voicingPresets.find((preset) => preset.value === settings.preset)?.description}
-                </p>
+                <VoicingSelect settings={settings} onChange={configure} />
                 <Select
                   label="单手音数上限"
                   value={String(settings.handLimit)}
@@ -735,7 +733,7 @@ function App() {
                   ]}
                   onChange={(movement) => configure({ movement: movement as Settings["movement"] })}
                 />
-                <div className="field-row">
+                <fieldset disabled={settings.soloLeft} className="field-row hand-range">
                   <Select
                     label="右手最低音"
                     value={String(settings.low)}
@@ -748,7 +746,7 @@ function App() {
                     options={noteOptions([72, 77, 79, 84])}
                     onChange={(high) => configure({ high: Number(high) })}
                   />
-                </div>
+                </fieldset>
                 <Select
                   label="双手最大跨度"
                   value={String(settings.span)}
@@ -767,14 +765,6 @@ function App() {
                   <TempoControl value={tempo} onChange={setTempo} />
                   <p className="hint">点击加减微调，或直接输入；按住 Shift 每次调整 5 BPM。</p>
                 </div>
-                <label className="loop-control">
-                  <input
-                    type="checkbox"
-                    checked={loop}
-                    onChange={(e) => setLoop(e.target.checked)}
-                  />
-                  循环播放
-                </label>
               </>
             )}
           </div>

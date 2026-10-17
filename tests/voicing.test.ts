@@ -224,3 +224,50 @@ test("rich progression selection is deterministic and minimizes cost over its re
     ) < 1e-8,
   );
 });
+
+test("independent hand modes use only chord tones and respect bounds", () => {
+  for (const leftMode of ["root", "shell", "free"] as const)
+    for (const preset of ["shell", "right-rich"] as const)
+      for (const root of roots)
+        for (const quality of ["M", "7", "dim7", "augM7", "m7b5", "7(#5,b9)"]) {
+          const c = { id: 1, root, quality };
+          const settings = { ...defaults, leftMode, preset };
+          const v = play(c, settings);
+          const allowed = chordIntervals(c).map((tone) => mod(pc(root) + tone));
+          for (const hand of [v.left, v.right]) {
+            assert.ok(hand.length > 0 && hand.length <= settings.handLimit);
+            assert.ok(hand.at(-1)! - hand[0] <= settings.span);
+            assert.ok(
+              hand.every((note) => allowed.includes(mod(note))),
+              JSON.stringify({ c, settings, v }),
+            );
+          }
+          assert.ok(v.right[0] > v.left.at(-1)!);
+          assert.ok(v.right[0] >= settings.low && v.right.at(-1)! <= settings.high);
+          if (leftMode === "root") assert.equal(v.left.length, 1);
+          if (leftMode === "shell") assert.ok(v.left.length >= 3);
+        }
+});
+
+test("solo left overrides hand modes and anchors without mutating them, and renders an empty right staff", () => {
+  const progression = [chord, { id: 2, root: "F", quality: "M7" }];
+  const settings: Settings = { ...defaults, preset: "right-rich", leftMode: "free" };
+  const anchor = { chordId: 1, tone: 14, rotate: true };
+  const before = generate(progression, settings, anchor);
+  const solo = { ...settings, soloLeft: true, low: 72, high: 72 };
+  const result = generate(progression, solo, anchor);
+  assert.equal(result.error, undefined);
+  assert.equal(result.voices.length, 2);
+  for (const v of result.voices) {
+    assert.deepEqual(v.right, []);
+    assert.ok(v.left.length >= 3);
+    assert.ok(Number.isFinite(voicingCost(chord, v, solo)));
+  }
+  for (const movement of ["smooth", "up", "down"] as const)
+    assert.ok(Number.isFinite(transition(result.voices[0], result.voices[1], movement)));
+  assert.deepEqual(nextInversion(anchor, progression, solo), anchor);
+  assert.deepEqual(generate(progression, settings, anchor), before);
+  const score = scoreNotation([chord, null, null, null], [result.voices[0]]);
+  assert.equal(score[0].staves[0].length, 0);
+  assert.equal(score[0].staves[1].length, result.voices[0].left.length);
+});

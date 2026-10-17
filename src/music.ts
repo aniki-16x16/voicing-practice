@@ -131,6 +131,8 @@ export const voicingPresets = [
 ] as const;
 export interface Settings {
   preset: (typeof voicingPresets)[number]["value"];
+  leftMode?: "root" | "shell" | "free";
+  soloLeft?: boolean;
   movement: "smooth" | "up" | "down";
   low: number;
   high: number;
@@ -160,7 +162,7 @@ export function nextInversion(
   chords: Chord[],
   settings: Settings,
 ): InversionAnchor | null {
-  if (!anchor?.rotate) return anchor;
+  if (settings.soloLeft || !anchor?.rotate) return anchor;
   const chord = chords.find((c) => c.id === anchor.chordId);
   if (!chord) return null;
   const tones = selectedIntervals(chord, settings.preset);
@@ -273,11 +275,16 @@ export function voicingCost(c: Chord, v: Voicing, settings: Settings) {
           if (played.has(mod(tone))) return sum;
           return sum + (core.includes(tone) ? 6 : [13, 15, 18, 20].includes(tone) ? 48 : 40);
         }, 0);
+  if (settings.soloLeft) return 0;
   const center = (settings.low + settings.high) / 2;
   let cost = omission + Math.abs((v.right[0] + v.right.at(-1)!) / 2 - center) * 0.025;
   if (settings.preset === "right-rich" || settings.preset === "both-rich")
     cost += (settings.handLimit - v.right.length) * 5;
-  if (settings.preset === "left-rich" || settings.preset === "both-rich") {
+  if (
+    settings.leftMode === "free" ||
+    settings.preset === "left-rich" ||
+    settings.preset === "both-rich"
+  ) {
     // 低音区不为凑满四/五音牺牲清晰度，通常两至三个支撑音。
     cost += Math.max(0, 3 - v.left.length) * 8;
     for (const note of v.left.slice(1)) {
@@ -292,13 +299,34 @@ export function voicingCost(c: Chord, v: Voicing, settings: Settings) {
 /** 低音固定；低八度只加纯五度，上方才开放其他音，避免密集低音。 */
 function leftCandidates(c: Chord, settings: Settings): number[][] {
   const bass = 36 + pc(c.bass || c.root);
-  if (settings.preset !== "left-rich" && settings.preset !== "both-rich") return [[bass]];
+  if (settings.soloLeft || settings.leftMode === "shell") {
+    // Shell 放在较清晰的中低音区；保留指定低音，骨架音在一个手跨度内排列。
+    const shellBass = bass < 43 ? bass + 12 : bass;
+    const tones = selectedIntervals(c, "shell").map((tone) => mod(pc(c.root) + tone));
+    const notes = [
+      shellBass,
+      ...tones
+        .filter((pitch) => pitch !== mod(shellBass))
+        .map((pitch) => shellBass + mod(pitch - shellBass)),
+    ].sort((a, b) => a - b);
+    return notes.length <= settings.handLimit && notes.at(-1)! - notes[0] <= settings.span
+      ? [notes]
+      : [];
+  }
+  if (
+    settings.leftMode === "root" ||
+    (settings.leftMode !== "free" &&
+      settings.preset !== "left-rich" &&
+      settings.preset !== "both-rich")
+  )
+    return [[bass]];
   const pitches = new Set(chordIntervals(c).map((tone) => mod(pc(c.root) + tone)));
   const available: number[] = [];
   for (let note = bass + 7; note <= Math.min(64, bass + settings.span); note++) {
     const distance = note - bass;
     if (distance < 12 && distance !== 7) continue;
-    if (distance === 12 || pitches.has(mod(note))) available.push(note);
+    if ((distance === 12 || pitches.has(mod(note))) && (distance !== 7 || pitches.has(mod(note))))
+      available.push(note);
   }
   const result: number[][] = [];
   const walk = (notes: number[], start: number) => {
@@ -318,12 +346,17 @@ function leftCandidates(c: Chord, settings: Settings): number[][] {
 }
 
 export function candidates(c: Chord, settings: Settings, lowestTone?: number): Voicing[] {
+  if (settings.soloLeft)
+    return leftCandidates(c, settings).map((left) => ({ bass: left[0], left, right: [] }));
   const intervals = selectedIntervals(c, settings.preset);
   const pitches = intervals.map((i) => mod(pc(c.root) + i));
   const bass = 36 + pc(c.bass || c.root);
   const result: Voicing[] = [];
   const richRight = settings.preset === "right-rich" || settings.preset === "both-rich";
-  const split = settings.preset === "left-rich" || settings.preset === "both-rich";
+  const split =
+    settings.leftMode !== undefined
+      ? settings.leftMode !== "root" && settings.preset !== "shell"
+      : settings.preset === "left-rich" || settings.preset === "both-rich";
   for (const left of leftCandidates(c, settings)) {
     const leftPitches = new Set(left.map((note) => mod(note - pc(c.root))));
     let required =
@@ -348,7 +381,7 @@ export function candidates(c: Chord, settings: Settings, lowestTone?: number): V
       : Math.max(1, requiredPitches.length);
     const walk = (notes: number[], counts: Map<number, number>) => {
       if (notes.length >= minimum && requiredPitches.every((pitch) => counts.has(pitch)))
-        result.push({ bass, left, right: notes });
+        result.push({ bass: left[0] ?? bass, left, right: notes });
       if (notes.length >= settings.handLimit) return;
       const remaining = requiredPitches.filter((pitch) => !counts.has(pitch)).length;
       if (remaining > settings.handLimit - notes.length) return;
@@ -414,10 +447,14 @@ export function transition(a: Voicing, b: Voicing, movement: Settings["movement"
     }
     return row[y.length];
   };
-  const top = b.right.at(-1)! - a.right.at(-1)!;
+  const top = (b.right.at(-1) ?? b.left.at(-1)!) - (a.right.at(-1) ?? a.left.at(-1)!);
   const direction =
     movement === "up" ? Math.max(0, -top) * 5 : movement === "down" ? Math.max(0, top) * 5 : 0;
-  return distance(a.right, b.right) + distance(a.left, b.left) * 0.15 + direction;
+  return (
+    distance(a.right, b.right) +
+    distance(a.left, b.left) * (a.right.length || b.right.length ? 0.15 : 1) +
+    direction
+  );
 }
 export function generate(
   chords: Chord[],
@@ -425,6 +462,7 @@ export function generate(
   anchor: InversionAnchor | null = null,
 ): { voices: Voicing[]; error?: string } {
   if (!chords.length) return { voices: [] };
+  if (settings.soloLeft) anchor = null;
   const target = anchor && chords.find((c) => c.id === anchor.chordId);
   if (anchor && (!target || !selectedIntervals(target, settings.preset).includes(anchor.tone)))
     return {
@@ -531,3 +569,4 @@ export function spelling(midi: number, c: Chord, bass = false) {
 export function voicingSpelling(midi: number, c: Chord, voice: Voicing) {
   return spelling(midi, c, voice.left.includes(midi) && mod(midi) === mod(voice.bass));
 }
+
