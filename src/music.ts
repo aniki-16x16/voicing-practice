@@ -173,6 +173,13 @@ export function nextTopNote(
   const index = tones.indexOf(anchor.tone);
   return index < 0 ? anchor : { ...anchor, tone: tones[(index + 1) % tones.length] };
 }
+export function nextTopNotes(anchors: TopNoteAnchor[], chords: Chord[], settings: Settings) {
+  return anchors.flatMap((anchor) => {
+    if (!chords.some((chord) => chord.id === anchor.chordId)) return [];
+    const next = nextTopNote(anchor, chords, settings);
+    return next ? [next] : [];
+  });
+}
 export function degree(root: string, reference: string) {
   const d = mod(letters.indexOf(root[0]) - letters.indexOf(reference[0]), 7);
   let delta = mod(pc(root) - pc(reference) - natural[d]);
@@ -498,19 +505,25 @@ export function transition(a: Voicing, b: Voicing, movement: Settings["movement"
 export function generate(
   chords: Chord[],
   settings: Settings,
-  anchor: TopNoteAnchor | null = null,
-): { voices: Voicing[]; error?: string } {
-  if (!chords.length) return { voices: [] };
-  const target = anchor && chords.find((c) => c.id === anchor.chordId);
-  if (anchor && (!target || !topNoteIntervals(target, settings).includes(anchor.tone)))
-    return {
-      voices: [],
-      error: "指定最高音不适用于当前和弦或 Voicing 预设，请重新选择最高音或改为自动优化。",
-    };
+  anchors: TopNoteAnchor[] | TopNoteAnchor | null = [],
+): { voices: Voicing[]; errors: Record<number, string>; error?: string } {
+  const errors: Record<number, string> = {};
+  if (!chords.length) return { voices: [], errors };
+  const fixed = new Map(
+    (Array.isArray(anchors) ? anchors : anchors ? [anchors] : []).map((anchor) => [
+      anchor.chordId,
+      anchor,
+    ]),
+  );
   // 同一次生成内复用相同和弦与最高音的候选；锚点和设置变化后重新生成。
   const cache = new Map<string, { voices: Voicing[]; costs: number[] }>();
-  const data = chords.map((c) => {
-    const tone = anchor?.chordId === c.id ? anchor.tone : undefined;
+  const data = chords.map((c, index) => {
+    const anchor = fixed.get(c.id);
+    const tone = anchor?.tone;
+    if (anchor && !topNoteIntervals(c, settings).includes(anchor.tone)) {
+      errors[c.id] = "指定最高音不适用于当前和弦或 Voicing 预设，请重新选择最高音或改为自动优化。";
+      return { voices: [], costs: [] };
+    }
     const key = JSON.stringify([c.root, c.quality, c.extras, c.bass, tone]);
     let layer = cache.get(key);
     if (!layer) {
@@ -518,14 +531,17 @@ export function generate(
       layer = { voices, costs: voices.map((v) => voicingCost(c, v, settings)) };
       cache.set(key, layer);
     }
+    if (!layer.voices.length)
+      errors[c.id] =
+        `第 ${index + 1} 个和弦 ${chordName(c)}${anchor ? " 的指定最高音" : ""} 没有符合条件的排列。请扩大音区、单手跨度或单手音数上限，或更换预设${anchor ? "、修改最高音；自动轮换不会跳过此音" : ""}。`;
     return layer;
   });
   const layers = data.map((layer) => layer.voices);
-  const empty = layers.findIndex((l) => !l.length);
-  if (empty >= 0)
+  if (Object.keys(errors).length)
     return {
       voices: [],
-      error: `第 ${empty + 1} 个和弦 ${chordName(chords[empty])}${anchor?.chordId === chords[empty].id ? " 的指定最高音" : ""} 没有符合条件的排列。请扩大音区、双手跨度或单手音数上限，或更换预设${anchor?.chordId === chords[empty].id ? "、修改最高音；自动轮换不会跳过此音" : ""}。`,
+      errors,
+      error: errors[chords.find((chord) => errors[chord.id])!.id],
     };
   let costs = data[0].costs;
   const back: number[][] = [layers[0].map(() => -1)];
@@ -564,7 +580,7 @@ export function generate(
     voices[i] = layers[i][index];
     index = back[i][index];
   }
-  return { voices };
+  return { voices, errors };
 }
 export function noteName(midi: number) {
   return (

@@ -8,6 +8,7 @@ import {
   degree,
   generate,
   nextTopNote,
+  nextTopNotes,
   topNoteOptions,
   mod,
   pc,
@@ -34,10 +35,81 @@ test("a middle chord anchor fixes the top note and leaves left bass alone", () =
       assert.deepEqual(r, generate(chords, options, anchor));
     }
 });
-test("changing the single anchor replaces its target, and clearing restores free generation", () => {
+test("a single anchor still works and clearing restores free generation", () => {
   const r = generate(chords, settings, { chordId: 3, tone: 7, rotate: false });
   assert.equal(mod(r.voices[2].right.at(-1)!), 7);
   assert.deepEqual(generate(chords, settings, null), generate(chords, settings));
+});
+
+test("adjacent fixed top notes survive a conflicting movement preference", () => {
+  const progression = [
+    { id: 1, root: "C", quality: "M" },
+    { id: 2, root: "C", quality: "M" },
+  ];
+  const anchors = [
+    { chordId: 1, tone: 0, rotate: false },
+    { chordId: 2, tone: 7, rotate: false },
+  ];
+  const options = { ...settings, low: 60, high: 72, movement: "up" as const };
+  const result = generate(progression, options, anchors);
+  assert.equal(result.error, undefined);
+  assert.deepEqual(result.errors, {});
+  assert.deepEqual(
+    result.voices.map((v) => v.right.at(-1)),
+    [72, 67],
+  );
+  assert.deepEqual(generate(progression, options, []), generate(progression, options));
+  const one = generate(progression, options, anchors.slice(1));
+  assert.equal(one.error, undefined);
+  assert.equal(one.voices[1].right.at(-1), 67);
+  assert.deepEqual(
+    anchors.map((anchor) => anchor.tone),
+    [0, 7],
+  );
+});
+
+test("every impossible chord is reported without marking valid fixed chords", () => {
+  const progression = Array.from({ length: 4 }, (_, i) => ({ id: i + 1, root: "C", quality: "M" }));
+  const anchors = [
+    { chordId: 1, tone: 0, rotate: false },
+    { chordId: 2, tone: 0, rotate: true },
+    { chordId: 3, tone: 1, rotate: false },
+    { chordId: 4, tone: 7, rotate: false },
+  ];
+  const options = { ...settings, low: 60, high: 67 };
+  const result = generate(progression, options, anchors);
+  assert.deepEqual(result.voices, []);
+  assert.deepEqual(Object.keys(result.errors), ["1", "2", "3"]);
+  assert.match(result.errors[1], /第 1 个和弦.*指定最高音/);
+  assert.match(result.errors[2], /第 2 个和弦.*指定最高音/);
+  assert.match(result.errors[3], /重新选择最高音/);
+  const repaired = generate(progression, options, [anchors[3]]);
+  assert.equal(repaired.error, undefined);
+  assert.deepEqual(repaired.errors, {});
+});
+
+test("multiple rotating top notes advance independently while fixed ones stay fixed", () => {
+  const anchors = [
+    { chordId: 1, tone: 0, rotate: true },
+    { chordId: 2, tone: 4, rotate: false },
+    { chordId: 3, tone: 11, rotate: true },
+    { chordId: 99, tone: 0, rotate: true },
+  ];
+  for (const soloLeft of [false, true]) {
+    const next = nextTopNotes(anchors, chords, { ...settings, soloLeft });
+    assert.deepEqual(next, [
+      { chordId: 1, tone: 3, rotate: true },
+      anchors[1],
+      { chordId: 3, tone: 0, rotate: true },
+    ]);
+    const result = generate(chords, { ...settings, soloLeft }, next);
+    assert.equal(result.error, undefined);
+    result.voices.forEach((v, i) => {
+      assert.equal(mod((soloLeft ? v.left : v.right).at(-1)! - pc(chords[i].root)), next[i].tone);
+    });
+  }
+  assert.equal(anchors[0].tone, 0);
+  assert.deepEqual(nextTopNotes([], chords, settings), []);
 });
 test("rotation covers every selected top tone, wraps, and never skips an impossible tone", () => {
   const chord = { id: 1, root: "C", quality: "M" };

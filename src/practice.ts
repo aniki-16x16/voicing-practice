@@ -1,7 +1,26 @@
-import type { Chord } from "./music";
+import type { Chord, TopNoteAnchor } from "./music";
 import { transposeDegree } from "./music.ts";
 
 export type Beat = Chord | null;
+/** Accept the previous single selection as well as independent per-chord selections. */
+export function restoreTopNotes(saved: unknown, beats: Beat[]): TopNoteAnchor[] {
+  const entries = Array.isArray(saved) ? saved : saved ? [saved] : [];
+  const anchors = new Map<number, TopNoteAnchor>();
+  for (const entry of entries) {
+    if (
+      entry &&
+      beats.some((chord) => chord?.id === entry.chordId) &&
+      Number.isInteger(entry.tone) &&
+      typeof entry.rotate === "boolean"
+    )
+      anchors.set(entry.chordId, {
+        chordId: entry.chordId,
+        tone: entry.tone,
+        rotate: entry.rotate,
+      });
+  }
+  return [...anchors.values()];
+}
 /** Transpose this segment by degree, stopping at the next explicit key marker. */
 export function changeReference(beats: Beat[], beat: number, reference?: string): Beat[] {
   if (!beats[beat]) return beats;

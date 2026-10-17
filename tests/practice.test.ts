@@ -10,9 +10,41 @@ import {
   removeChordAt,
   removeBarAt,
   changeReference,
+  restoreTopNotes,
 } from "../src/practice.ts";
 import { degree, generate, pc } from "../src/music.ts";
 import type { Beat } from "../src/practice.ts";
+
+test("saved top notes migrate, retain only surviving chords, and keep one setting per chord", () => {
+  const beats: Beat[] = [
+    { id: 1, root: "C", quality: "M" },
+    null,
+    { id: 2, root: "G", quality: "7" },
+    null,
+  ];
+  const first = { chordId: 1, tone: 4, rotate: false };
+  const second = { chordId: 2, tone: 10, rotate: true };
+  assert.deepEqual(restoreTopNotes(first, beats), [first]);
+  assert.deepEqual(restoreTopNotes([first, second], beats), [first, second]);
+  assert.deepEqual(restoreTopNotes([first, second], beats.slice(2)), [second]);
+  assert.deepEqual(
+    restoreTopNotes(
+      [
+        first,
+        null,
+        {},
+        { chordId: 2, tone: 4, rotate: "true" },
+        { ...first, tone: 0 },
+        second,
+        { ...first, chordId: 99 },
+      ],
+      beats,
+    ),
+    [{ ...first, tone: 0 }, second],
+  );
+  for (const saved of [null, [], {}, "invalid"])
+    assert.deepEqual(restoreTopNotes(saved, beats), []);
+});
 
 test("changing a key preserves root and slash-bass degrees throughout only its segment", () => {
   const beats: Beat[] = [

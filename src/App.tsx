@@ -24,7 +24,7 @@ import {
   degree,
   generate,
   topNoteOptions,
-  nextTopNote,
+  nextTopNotes,
   mod,
   noteName,
   qualities,
@@ -42,6 +42,7 @@ import {
   removeChordAt,
   removeBarAt,
   changeReference,
+  restoreTopNotes,
 } from "./practice";
 import type { Beat } from "./practice";
 import { VoicingSelect } from "./VoicingSelect";
@@ -160,20 +161,18 @@ function App() {
   const [beats, setBeats] = useState<Beat[]>(restore),
     [settings, setSettings] = useState(defaults),
     [current, setCurrent] = useState(0);
-  const [anchor, setAnchor] = useState<TopNoteAnchor | null>(() => {
+  const [anchors, setAnchors] = useState<TopNoteAnchor[]>(() => {
     try {
-      const saved = JSON.parse(localStorage.getItem("voicing-top-note-v1") || "null");
-      if (
-        saved &&
-        beats.some((c) => c?.id === saved.chordId) &&
-        Number.isInteger(saved.tone) &&
-        typeof saved.rotate === "boolean"
-      )
-        return saved;
+      const saved = JSON.parse(
+        localStorage.getItem("voicing-top-notes-v2") ??
+          localStorage.getItem("voicing-top-note-v1") ??
+          "null",
+      );
+      return restoreTopNotes(saved, beats);
     } catch {
       /* optional */
     }
-    return null;
+    return [];
   });
   const [drawer, setDrawer] = useState<"chord" | "practice" | null>(null),
     [tempo, setTempo] = useState(76),
@@ -186,7 +185,7 @@ function App() {
     soundId = useRef(0),
     lastSound = useRef("");
   const events = useMemo(() => timeline(beats), [beats]),
-    result = useMemo(() => generate(events.chords, settings, anchor), [events, settings, anchor]);
+    result = useMemo(() => generate(events.chords, settings, anchors), [events, settings, anchors]);
   const index = events.indices[current],
     voice = result.voices[index],
     activeChord = events.chords[index],
@@ -202,13 +201,15 @@ function App() {
   }, [beats]);
   useEffect(() => {
     try {
-      localStorage.setItem("voicing-top-note-v1", JSON.stringify(anchor));
+      localStorage.setItem("voicing-top-notes-v2", JSON.stringify(anchors));
     } catch {
       /* optional */
     }
-  }, [anchor]);
+  }, [anchors]);
   const commitBeats = (next: Beat[]) => {
-    if (anchor && !next.some((c) => c?.id === anchor.chordId)) setAnchor(null);
+    setAnchors((previous) =>
+      previous.filter((anchor) => next.some((c) => c?.id === anchor.chordId)),
+    );
     setBeats(next);
   };
   const silence = () => {
@@ -256,9 +257,9 @@ function App() {
       const next = current + 1;
       if (next === beats.length) {
         if (loop) {
-          const nextAnchor = nextTopNote(anchor, events.chords, settings);
-          const nextResult = generate(events.chords, settings, nextAnchor);
-          setAnchor(nextAnchor);
+          const nextAnchors = nextTopNotes(anchors, events.chords, settings);
+          const nextResult = generate(events.chords, settings, nextAnchors);
+          setAnchors(nextAnchors);
           if (nextResult.error) {
             stop();
           }
@@ -274,7 +275,7 @@ function App() {
     return () => window.clearTimeout(timer);
     // The timer advances beats; sustained slots do not retrigger the chord.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [playing, current, tempo, loop, voice, beats.length, cycle, index, events, anchor, settings]);
+  }, [playing, current, tempo, loop, voice, beats.length, cycle, index, events, anchors, settings]);
   useEffect(
     () => () => {
       soundId.current++;
@@ -298,13 +299,13 @@ function App() {
     const next = beats.map((c, i) =>
       i === current
         ? {
-          ...(c || {
-            ...chord,
-            id: Math.max(0, ...events.chords.map((x) => x.id)) + 1,
-            reference: undefined,
-          }),
-          ...chordPatch,
-        }
+            ...(c || {
+              ...chord,
+              id: Math.max(0, ...events.chords.map((x) => x.id)) + 1,
+              reference: undefined,
+            }),
+            ...chordPatch,
+          }
         : c,
     );
     commitBeats(
@@ -314,7 +315,7 @@ function App() {
   const setTopNote = (value: string) => {
     stop();
     if (value === "auto") {
-      setAnchor(null);
+      setAnchors((previous) => previous.filter((anchor) => anchor.chordId !== beats[current]?.id));
       return;
     }
     let id = beats[current]?.id;
@@ -324,23 +325,23 @@ function App() {
         beats.map((c, i) => (i === current ? { ...chord, id: id!, reference: undefined } : c)),
       );
     }
+    const anchor = anchors.find((anchor) => anchor.chordId === id);
     const tone =
       value === "rotate"
         ? anchor?.chordId === id &&
           topNoteOptions(chord, settings).some((option) => option.tone === anchor.tone)
           ? anchor.tone
           : (topNoteOptions(chord, settings).find(
-            (option) =>
-              voice &&
-              mod(option.tone) ===
-              mod((settings.soloLeft ? voice.left : voice.right).at(-1)! - pc(chord.root)),
-          )?.tone ?? topNoteOptions(chord, settings)[0].tone)
+              (option) =>
+                voice &&
+                mod(option.tone) ===
+                  mod((settings.soloLeft ? voice.left : voice.right).at(-1)! - pc(chord.root)),
+            )?.tone ?? topNoteOptions(chord, settings)[0].tone)
         : Number(value);
-    setAnchor({
-      chordId: id,
-      tone,
-      rotate: value === "rotate",
-    });
+    setAnchors((previous) => [
+      ...previous.filter((anchor) => anchor.chordId !== id),
+      { chordId: id!, tone, rotate: value === "rotate" },
+    ]);
     if (value === "rotate") setLoop(true);
   };
   const configure = (patch: Partial<Settings>) => {
@@ -377,13 +378,8 @@ function App() {
     window.addEventListener("keydown", shortcut);
     return () => window.removeEventListener("keydown", shortcut);
   });
-  const anchorChord = anchor ? events.chords.find((c) => c.id === anchor.chordId) : undefined;
-  const anchorName =
-    anchor && anchorChord
-      ? topNoteOptions(anchorChord, settings).find((o) => o.tone === anchor.tone)?.name ||
-      "需重选最高音"
-      : "";
-  const isAnchor = !!beats[current] && anchor?.chordId === beats[current]?.id;
+  const anchor = anchors.find((anchor) => anchor.chordId === beats[current]?.id);
+  const chordError = beats[current] ? result.errors[beats[current]!.id] : undefined;
   const markers = useMemo(() => referenceMarkers(beats), [beats]);
   const addBar = () => {
     if (beats.length >= 128) return;
@@ -447,7 +443,8 @@ function App() {
                           <span className="reference-marker">{markers[beat]} 大调</span>
                         )}
                         <button
-                          className={`beat ${current === beat ? "active" : ""} ${c ? "has-chord" : ""} ${c && anchor?.chordId === c.id ? "top-note-set" : ""}`}
+                          className={`beat ${current === beat ? "active" : ""} ${c ? "has-chord" : ""} ${c && anchors.some((anchor) => anchor.chordId === c.id) ? "top-note-set" : ""} ${c && result.errors[c.id] ? "voicing-error" : ""}`}
+                          aria-invalid={c && result.errors[c.id] ? true : undefined}
                           aria-label={`第${bar + 1}小节第${b + 1}拍 ${c ? chordName(c) : "延续"}，点击编辑`}
                           aria-pressed={current === beat}
                           data-delete-beat={c ? beat : undefined}
@@ -479,19 +476,12 @@ function App() {
           </DragScroll>
         </section>
         <section className="notation" aria-label="五线谱">
-          {result.error ? (
-            <div role="alert" className="error">
-              {result.error}
-              <button onClick={() => setDrawer("practice")}>调整设置</button>
-            </div>
-          ) : (
-            <Staff
-              beats={beats}
-              voices={result.voices}
-              current={current}
-              onSelect={(beat) => choose(beat)}
-            />
-          )}
+          <Staff
+            beats={beats}
+            voices={result.voices}
+            current={current}
+            onSelect={(beat) => choose(beat)}
+          />
         </section>
         <section className="keys-section">
           <div className="keyboard-heading">
@@ -675,7 +665,7 @@ function App() {
                 <fieldset className="top-note-settings" aria-label="最高音设置">
                   <Select
                     label="最高音（Top note）"
-                    value={isAnchor ? (anchor!.rotate ? "rotate" : String(anchor!.tone)) : "auto"}
+                    value={anchor ? (anchor.rotate ? "rotate" : String(anchor.tone)) : "auto"}
                     options={[
                       { value: "auto", label: "自动优化" },
                       { value: "rotate", label: "每轮自动换最高音" },
@@ -683,9 +673,9 @@ function App() {
                         value: String(o.tone),
                         label: o.label,
                       })),
-                      ...(isAnchor &&
-                        !topNoteOptions(chord, settings).some((o) => o.tone === anchor!.tone)
-                        ? [{ value: String(anchor!.tone), label: "原最高音不可用，请重选" }]
+                      ...(anchor &&
+                      !topNoteOptions(chord, settings).some((o) => o.tone === anchor.tone)
+                        ? [{ value: String(anchor.tone), label: "原最高音不可用，请重选" }]
                         : []),
                     ]}
                     onChange={setTopNote}
@@ -693,19 +683,28 @@ function App() {
                   <p className="hint">
                     选择当前和弦的几音作为{settings.soloLeft ? "左手" : "右手"}最高音。
                   </p>
-                  {isAnchor && anchor?.rotate && (
+                  {anchor?.rotate && (
                     <p className="hint">
                       整段循环结束后切换；无解时暂停，不跳过。
                       {!loop && "当前循环播放已关闭，自动切换不会执行。"}
                     </p>
                   )}
-                  {!isAnchor && anchorChord && (
-                    <p className="hint">
-                      当前锚点：{chordName(anchorChord)} · {anchorName}
-                      <button className="clear-anchor" onClick={() => setTopNote("auto")}>
-                        解除
-                      </button>
-                    </p>
+                  {chordError && (
+                    <div role="alert" className="error">
+                      {chordError}
+                      <button onClick={() => setDrawer("practice")}>调整设置</button>
+                    </div>
+                  )}
+                  {anchors.length > 0 && (
+                    <button
+                      className="clear-anchors"
+                      onClick={() => {
+                        stop();
+                        setAnchors([]);
+                      }}
+                    >
+                      清除全部固定
+                    </button>
                   )}
                 </fieldset>
                 <div className="edit-preview">
